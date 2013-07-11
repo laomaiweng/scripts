@@ -1,0 +1,48 @@
+#!/bin/bash
+
+if [[ "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "Usage: `basename $0`"
+    echo "  Generates a kernel using /usr/src/linux/.config.cobalt."
+    echo "  Generates the corresponding initramfs with LVM, framebuffer"
+    echo "  and splash support. Also strips the initramfs from unneeded"
+    echo "  stuff (modules and HW detection logic)."
+    exit
+fi
+
+
+genkernel --save-config --mrproper --install --no-ramdisk-modules --no-all-ramdisk-modules --kernel-config=/usr/src/linux/.config.cobalt --mountboot --makeopts="-j9" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --lvm --no-mdadm --no-dmraid --no-luks --real-root="/dev/vg-cobalt-system/root" --kernname="cobalt" --no-firmware --compress-initramfs-type=gzip all
+
+
+echo
+echo
+INITRAMFS="`ls -ct -1 /boot/initramfs* | head -n 1`"    # use most recently touched initramfs
+INITDIR="`basename $0`-initramfs"
+IMPORTER="./import-initramfs"
+if [[ -f "$INITRAMFS" && -x "$IMPORTER" ]]
+then
+    echo "Including additional files into initramfs..."
+    mkdir -p "$INITDIR"
+    pushd "$INITDIR"
+    gunzip -c "$INITRAMFS" | cpio -i
+    popd
+    "$IMPORTER" /usr/share/v86d/initramfs "$INITDIR"
+    pushd "$INITDIR"
+    find . -print0 | cpio -0 -o -H newc | gzip -c -9 > "$INITRAMFS"
+    popd
+    rm -Rf "$INITDIR"
+else
+    echo "ERROR: Cannot include additional files: importer not found, or initramfs not found"
+fi
+
+
+echo
+echo
+GRUBCFG="/boot/grub2/grub.cfg"
+if [[ -f "$GRUBCFG" ]]
+then
+    grub2-mkconfig -o "$GRUBCFG"
+else
+    echo "WARNING: Cannot update Grub: $GRUBCFG not found"
+fi
+
