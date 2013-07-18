@@ -1,0 +1,20 @@
+#!/bin/bash
+
+if [[ $# -lt 2  ]]
+then
+    echo "Usage: `basename $0` [diff options] <orig tree> <new tree>"   >&2
+    echo "  Generates a Gentoo patch file for use with ebuilds."        >&2
+    exit 0
+fi
+
+N=$(($#-1))
+ORIG="${!N}"
+NEW="${!#}"
+if [[ $# -gt 2 ]]
+then
+    set -- "${@:1:$(($#-2))}"
+    diff -Naurp "$@" "$ORIG" "$NEW"
+else
+    diff -Naurp "$ORIG" "$NEW"
+fi
+
