@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Not the required number of arguments: display the help
+if [[ $# != 3 ]]
+then
+    echo "  Usage: `basename $0` <amount> <from> <to>"
+    echo "Currency convertor using Google's calculator."
+    exit
+fi
+
+# Query
+RESULT="`curl -s "http://www.google.com/ig/calculator?hl=en&q=$1$2=?$3&#8221" | iconv -f ISO8859-1 -t UTF8`"
+
+# Check for error
+ERROR="`echo "$RESULT" | sed -e 's/^{lhs: "[^"]*",rhs: "[^"]*",error: "\([^"]*\)".*$/\1/'`"
+if [[ -n "$ERROR" ]]
+then
+    echo "Error: $ERROR" >&2
+    exit 1
+fi
+
+# Print response
+echo "$RESULT" | sed -e 's/^{lhs: "[^"]*",rhs: "\([^ ]*\)[^"]*".*$/\1/'
+
