@@ -1,0 +1,35 @@
+#!/bin/bash
+# Shutdown wrapper script that ensures you really want to shutdown
+# Useful when there may be people logged in remotely and you don't have
+# a login manager warning you that shutting down would be rude to them
+
+if [[ "$1" == "--help" ]]
+then
+    echo "  Usage: `basename $0` [shutdown options]"
+    echo
+    echo "'shutdown' wrapper that ensures you really want to shutdown."
+    echo "Options are passed on to shutdown. With no options, '-h now' is assumed."
+    exit
+fi
+
+echo -e "  \033[01;33mLogged on users:\033[00m"
+w
+
+echo
+echo -ne "\033[01;37mDo you really want to shutdown the computer? yes/no:\033[00m "
+read ANS
+
+case "$ANS" in
+    [Yy][Ee][Ss])
+        [[ $# -eq 0 ]] && OPTS="-h now"
+        sudo shutdown ${OPTS:-"$@"}
+        ;;
+
+    [Nn][Oo])
+        ;;
+
+    *)
+        echo "This doesn't make any sense."
+        ;;
+esac
+
