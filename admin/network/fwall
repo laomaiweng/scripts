@@ -28,7 +28,7 @@ LAN_SERVICES_UDP=""
 
 function start_fw
 {
-    echo -n "Starting IPv4 firewall..."
+    echo -n "Starting IPv4 firewall... "
 
     # Input table default policy : DROP.
     iptables -P INPUT DROP
@@ -93,7 +93,7 @@ function start_fw
 
 function stop_fw
 {
-    echo -n "Stopping IPv4 firewall..."
+    echo -n "Stopping IPv4 firewall... "
 
     iptables -F INPUT
     iptables -P INPUT ACCEPT
