@@ -3,7 +3,7 @@
 # Useful when there may be people logged in remotely and you don't have
 # a login manager warning you that shutting down would be rude to them
 
-if [[ "$1" == "--help" ]]
+if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]
 then
     echo "  Usage: `basename $0` [shutdown options]"
     echo
