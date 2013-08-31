@@ -4,7 +4,7 @@
 if [[ $# != 3 ]]
 then
     echo "  Usage: `basename $0` <amount> <from> <to>"
-    echo "Currency convertor using Google's calculator."
+    echo "Unit/currency converter using Google's calculator."
     exit
 fi
 
