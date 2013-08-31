@@ -1,0 +1,14 @@
+#!/bin/bash
+# cowrand: a wrapper to call a random combination of cowsay/cowthink and cow state
+
+# Possible combinations of cowsay invocations
+COWMANDS=([0]="cowsay" [1]="cowthink")
+COWSTATES=([0]="" [1]="-b" [2]="-d" [3]="-g" [4]="-p" [5]="-s" [6]="-t" [7]="-w" [8]="-y")
+
+# Selected combination
+CMAND=${COWMANDS[$(($RANDOM % 2))]}
+CSTATE=${COWSTATES[$(($RANDOM % 9))]}
+
+# Cowsay invocation
+$CMAND $CSTATE $*
+
