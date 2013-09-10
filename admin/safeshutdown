@@ -3,24 +3,87 @@
 # Useful when there may be people logged in remotely and you don't have
 # a login manager warning you that shutting down would be rude to them
 
+
+# grub-reboot alternatives
+GRUBREBOOT_ALTERNATIVES="grub-reboot grub2-reboot"
+
+# Error function
+function error() {  # 1:message 2:code
+    echo "Error: $1" >&2
+    exit $2
+}
+
+
+# Help message
 if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]
 then
-    echo "  Usage: `basename $0` [shutdown options]"
-    echo
-    echo "'shutdown' wrapper that ensures you really want to shutdown."
-    echo "Options are passed on to shutdown. With no options, '-h now' is assumed."
+    echo "  Usage: ${0##*/} [options] [--] [shutdown options]
+
+'shutdown' wrapper that ensures you really want to shutdown.
+Options not handled by ${0##*/} are passed on to shutdown.
+With no options, '-h now' is assumed.
+
+Options:
+  -g | --grub [ENTRY]       grub entry to boot into on next bootup
+                            (obviously requires grub, and grub-reboot)
+" >&2
     exit
 fi
 
+
+# Parse the options
+GRUBENTRY=''
+OPTS_DONE=''
+until [[ "$OPTS_DONE" ]]
+do
+    case "$1" in
+        "-g"|"--grub")
+            GRUBENTRY="$2"
+            [[ -z "$GRUBENTRY" ]] && error "empty grub entry" 1
+            shift 2
+            ;;
+
+        "--")
+            # End of options
+            OPTS_DONE='true'
+            shift
+            ;;
+
+        *)
+            # Assume end of options (the rest of them will be passed on to shutdown)
+            OPTS_DONE='true'
+            ;;
+    esac
+done
+
+
+# Print logged on users
 echo -e "  \033[01;33mLogged on users:\033[00m"
 w
 
+
+# Shutdown if the user confirms
 echo
 echo -ne "\033[01;37mDo you really want to shutdown the computer? yes/no:\033[00m "
 read ANS
 
 case "$ANS" in
     [Yy][Ee][Ss])
+        if [[ -n "$GRUBENTRY" ]]
+        then
+            # Find grub-reboot
+            PATH="$PATH:/sbin:/usr/sbin"
+            for gr in $GRUBREBOOT_ALTERNATIVES
+            do
+                which $gr &> /dev/null && { GRUBREBOOT=$gr ; break ; }
+            done
+            [[ -z "$GRUBREBOOT" ]] && error "grub-reboot not found" 1
+
+            # Set the grub entry for next bootup
+            sudo "$GRUBREBOOT" "$GRUBENTRY"
+        fi
+
+        # Shutdown
         [[ $# -eq 0 ]] && OPTS="-h now"
         sudo shutdown ${OPTS:-"$@"}
         ;;
@@ -30,6 +93,7 @@ case "$ANS" in
 
     *)
         echo "This doesn't make any sense."
+        exit 1
         ;;
 esac
 
