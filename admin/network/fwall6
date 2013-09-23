@@ -96,7 +96,7 @@ then
     stop_fw6
     start_fw6
 else
-    echo "SYNTAX: `basename $0` <start|stop|restart>"
+    echo "SYNTAX: ${0##*/} <start|stop|restart>"
 fi
 
 exit 0

@@ -2,8 +2,8 @@
 
 if [[ $# -lt 2  ]]
 then
-    echo "Usage: `basename $0` [diff options] <orig tree> <new tree>"   >&2
-    echo "  Generates a Gentoo patch file for use with ebuilds."        >&2
+    echo "Usage: ${0##*/} [diff options] <orig tree> <new tree>"   >&2
+    echo "  Generates a Gentoo patch file for use with ebuilds."   >&2
     exit 0
 fi
 

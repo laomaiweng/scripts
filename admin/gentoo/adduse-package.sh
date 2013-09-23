@@ -3,7 +3,7 @@
 
 if [[ $# -lt 2 ]]
 then
-    echo "Usage: `basename $0` <atom> <USE flags>"
+    echo "Usage: ${0##*/} <atom> <USE flags>"
     echo "  Add or remove package-specific USE flags."
     exit
 fi

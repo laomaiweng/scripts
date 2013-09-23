@@ -2,7 +2,7 @@
 
 if [[ -z "$1" ]]
 then
-    echo "Usage: `basename $0` <atom> <keywords>"
+    echo "Usage: ${0##*/} <atom> <keywords>"
     exit
 fi
 

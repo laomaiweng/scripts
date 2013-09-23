@@ -2,7 +2,7 @@
 
 if [[ "$1" == "-h" || "$1" == "--help" ]]
 then
-    echo "Usage: `basename $0`"
+    echo "Usage: ${0##*/}"
     echo "  Generates a kernel using /usr/src/linux/.config.cobalt."
     echo "  Generates the corresponding initramfs with LVM, framebuffer"
     echo "  and splash support. Also strips the initramfs from unneeded"
@@ -17,7 +17,7 @@ genkernel --save-config --mrproper --install --no-ramdisk-modules --no-all-ramdi
 echo
 echo
 INITRAMFS="`ls -ct -1 /boot/initramfs* | head -n 1`"    # use most recently touched initramfs
-INITDIR="`basename $0`-initramfs"
+INITDIR="${0##*/}-initramfs"
 IMPORTER="./import-initramfs"
 if [[ -f "$INITRAMFS" && -x "$IMPORTER" ]]
 then

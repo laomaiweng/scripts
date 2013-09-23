@@ -3,7 +3,7 @@
 
 # Usage function
 function usage() {
-    echo "Usage: `basename $0` <FILE> <DIR>"                                        >& 2
+    echo "Usage: ${0##*/} <FILE> <DIR>"                                             >& 2
     echo "  Imports the files listed in FILE into the file hierarchy rooted at DIR" >& 2
     echo "  /!\\ FILE is expected to describe files as the kernel's initramfs"      >& 2
     echo "      packaging system would expect them"                                 >& 2

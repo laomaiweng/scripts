@@ -2,7 +2,7 @@
 
 if [[ -z "$1" ]]
 then
-    echo "Usage: `basename $0` <package>"
+    echo "Usage: ${0##*/} <package>"
     exit
 fi
 

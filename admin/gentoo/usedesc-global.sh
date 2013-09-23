@@ -2,7 +2,7 @@
 
 if [[ -z "$1" ]]
 then
-    echo "Usage: `basename $0` <global USE flag>"
+    echo "Usage: ${0##*/} <global USE flag>"
     exit
 fi
 

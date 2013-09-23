@@ -114,7 +114,7 @@ then
     stop_fw
     start_fw
 else
-    echo "SYNTAX: `basename $0` <start|stop|restart>"
+    echo "SYNTAX: ${0##*/} <start|stop|restart>"
 fi
 
 exit 0
