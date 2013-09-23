@@ -3,7 +3,7 @@
 # Not the required number of arguments: display the help
 if [[ $# != 3 ]]
 then
-    echo "  Usage: `basename $0` <amount> <from> <to>"
+    echo "  Usage: `${0##*/}` <amount> <from> <to>"
     echo "Unit/currency converter using Google's calculator."
     exit
 fi
