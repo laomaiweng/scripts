@@ -1,0 +1,36 @@
+#!/bin/bash
+# Fetched and modified from http://awesome.naquadah.org/wiki/Autostart#The_X_Resources_way
+
+
+# Help message
+if [[ $# -lt 2 || "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "  Syntax: ${0##*/} <X resource property> <command> [args ...]
+
+Run the given command if the specified X resource property is unset, and set
+the X resource property afterwards.  If the X resource property is already set,
+do nothing."
+    exit
+fi
+
+
+# Test the X resource property
+PROP=$1
+shift
+if xrdb -query | grep -q $PROP
+then
+    # Resource already set, bail out
+    exit 1
+fi
+
+# Set the X resource property
+echo "$PROP: on" | xrdb -merge
+
+# Setup logging of command output
+TEMPLATE=xsession-$USER-$PPID-$PROP-XXX
+TEMPFILE=$(mktemp --tmpdir $TEMPLATE)
+echo "logging to $TEMPFILE"
+
+# Run the command
+( "$@" &> "$TEMPFILE" ) &
+
