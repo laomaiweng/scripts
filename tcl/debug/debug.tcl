@@ -12,6 +12,7 @@ package provide debug 1.0
 
 # Define the Debug namespace
 namespace eval Debug {
+    variable debug 1
 }
 
 
@@ -87,5 +88,7 @@ if {![info exists ::env(TCL_DEBUG)]} {
     foreach proc [info procs ::Debug::*] {
         proc $proc args {}
     }
+    # Set debug flag to false
+    set debug 0
 }
 
