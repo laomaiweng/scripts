@@ -1,0 +1,63 @@
+#!/bin/bash
+# Find DBus session adress(es) for the current user
+# Useless: ~/.dbus/session-bus contains all you need already
+
+# Parse the arguments
+case "$1" in
+    "-h"|"--help")
+        echo "Usage: ${0##*/} [-u|--uniq]" >&2
+        exit
+        ;;
+
+    "-u"|"--uniq")
+        UNIQ='true'
+        ;;
+esac
+
+# List all processes in /proc
+PROCESSES="`find /proc/ -maxdepth 1 -type d -name '[0-9]*' -printf '%P\n'`"
+declare -a BUSES PROCS DISPS
+INDEX=0
+for PROC in $PROCESSES
+do
+    PROCDIR="/proc/$PROC"
+    # Check whether the process files are readable
+    if [[ -r "$PROCDIR/status" && -r "$PROCDIR/environ" ]]
+    then
+        # Check that the process indeed belongs to the current user
+        [[ `grep "Uid:" "$PROCDIR/status" | cut -f 2` -eq `id -u` ]] || continue
+
+        # Search for the DBus environment variable in the process' environment
+        BUS="`cat "$PROCDIR/environ" | tr '\0' '\n' | grep "DBUS_SESSION_BUS_ADDRESS"`"
+
+        # Search for the DISPLAY environment variable in the process' environment
+        DISP="`cat "$PROCDIR/environ" | tr '\0' '\n' | grep "DISPLAY" | sed -e 's/DISPLAY=//'`"
+
+        # Store the DBus session address, display and process
+        if [[ -n "$BUS" ]]
+        then
+            ((INDEX++))
+            BUSES[$INDEX]="$BUS"
+            PROCS[$INDEX]="$PROC"
+            DISPS[$INDEX]="$DISP"
+        fi
+    fi
+done
+
+# Print the findings
+if [[ $INDEX -gt 0 ]]
+then
+    if [[ -z "$UNIQ" ]]
+    then
+        echo "###################################################################################################################################" >&2
+        echo -e "# DBus session address\t\t\t\t\t\t\t\t\t\t\t# Display \t# Process #" >&2
+        echo "###################################################################################################################################" >&2
+    fi
+    for I in `seq $INDEX`
+    do
+        [[ "$UNIQ" ]] && echo "${BUSES[$I]}" || echo -e "  ${BUSES[$I]}\t  ${DISPS[$I]}\t\t  ${PROCS[$I]}"
+    done |& sort -k 1,1 ${UNIQ:+-u}
+else
+    echo "No DBus session found!" >&2
+fi
+
