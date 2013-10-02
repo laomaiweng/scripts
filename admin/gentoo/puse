@@ -1,0 +1,500 @@
+#!/usr/bin/tclsh
+#############################################################################
+#   puse                                                                    #
+#                                                                           #
+# Script for management of Gentoo USE flags file package.use.               #
+# Respectful of file layout (category blocks, comments, blanks, ...).       #
+#############################################################################
+
+
+#############################################################################
+#############################################################################
+#
+# Packages
+#
+#############################################################################
+#############################################################################
+
+lappend auto_path [file normalize [file join [file dirname $::argv0] ../../tcl]]
+
+package require debug
+package require getopt
+
+
+#############################################################################
+#############################################################################
+#
+# Procedures
+#
+#############################################################################
+#############################################################################
+
+#############################################################################
+# Get the script name.
+#
+# Arguments: NONE
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   script basename (no leading path, no trailing .tcl)
+#############################################################################
+proc scriptName {} {
+    # Strip the path
+    set base [file tail $::argv0]
+    # Strip any trailing .tcl extension
+    if {[file extension $base] eq ".tcl"} {
+        set base [file rootname $base]
+    }
+    # Return the resulting basename
+    return $base
+}
+
+#############################################################################
+# Escape a string for use in a regexp pattern.
+#
+# Arguments:
+#   str     string to escape
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   escaped string that can safely be used as a fixed string in a regexp
+#############################################################################
+proc reEscape {str} {
+    regsub -all {\W} $str {\\&}
+}
+
+
+#############################################################################
+# Remove indices from a list.
+#
+# Arguments:
+#   listVar     list variable to strip indices from
+#   indices     indices to strip from the list
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return: NONE
+#############################################################################
+proc lremove {listVar indices} {
+    upvar 1 $listVar list
+    # Sort the indices in decreasing order (so that indices get removed from
+    # the end of the list first and don't impact removal of other indices)
+    set indices [lsort -integer -decreasing $indices]
+    # Remove each index
+    foreach i $indices {
+        set list [lreplace $list $i $i]
+    }
+}
+
+
+#############################################################################
+# Parse a flagspec and return the status and flag name.
+#
+# Arguments:
+#   flagspec    flagspec to parse
+#   statusVar   status variable
+#   flagVar     flag name variable
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   boolean indicating success or failure of parse
+#############################################################################
+proc ParseFlagspec {flagspec statusVar flagVar} {
+    upvar 1 $statusVar status $flagVar flag
+    # Parse the flagspec and return the result
+    return [regexp {^([?%+-]?)([[:alnum:]].*)$} $flagspec -> status flag]
+}
+
+
+#############################################################################
+# Compare two flagspecs alphabetically, not taking into account any leading +/-.
+#
+# Arguments:
+#   fs1     first flagspec
+#   fs2     second flagspec
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   an integer less than, equal to, or greater than zero if the first
+#   flagspec is to be considered less than, equal to, or greater than the
+#   second, respectively
+#############################################################################
+proc CompareFlags {fs1 fs2} {
+    # Get the flag names
+    ParseFlagspec $fs1 - f1
+    ParseFlagspec $fs2 - f2
+    # Compare them
+    return [string compare $f1 $f2]
+}
+
+
+#############################################################################
+# Update a list of USE flags according to a list of flagspecs.
+#
+# Arguments:
+#   flags       list of USE flags
+#   flagspecs   list of flagspecs
+#
+# Globals:
+#   query       holds the result of query flagspecs
+#   queryonly   holds whether only queries were done on the flags
+#
+# Variables: NONE
+#
+# Return:
+#   updated list of flags
+#############################################################################
+proc UpdateFlags {flags flagspecs} {
+    global query queryonly
+    # Process each flagspec
+    foreach spec $flagspecs {
+        # Parse the flagspec
+        if {![ParseFlagspec $spec action flag]} {
+            puts stderr "Error: wrong format for USE flag: $spec"
+            exit 2
+        }
+        if {$action eq ""} {
+            set action "+"
+        }
+        # Search for the flag
+        set iflag [lsearch -all -regexp $flags "^\[+-\]?$flag\$"]
+
+        # Process the flag according to its action
+        switch -- $action {
+            + {
+                # Set the flag
+                # Remove all occurences of the flag
+                lremove flags $iflag
+                # Append the flagspec
+                lappend flags $flag
+                # By the way, now we're not just querying
+                set queryonly 0
+            }
+
+            - {
+                # Unset the flag
+                # Remove all occurences of the flag
+                lremove flags $iflag
+                # Append the flagspec
+                lappend flags -$flag
+                # By the way, now we're not just querying
+                set queryonly 0
+            }
+
+            % {
+                # Reset the flag
+                # Remove all occurences of the flag
+                lremove flags $iflag
+                # By the way, now we're not just querying
+                set queryonly 0
+            }
+
+            ? {
+                # Query the flag
+                # Remove all occurences of the flag but the last
+                lremove flags [lrange $iflag 0 end-1]
+                # Append the state of the flag to the query results
+                if {[llength $iflag] > 0} {
+                    lappend query [lindex $flags [lindex $iflag end]]
+                } else {
+                    lappend query %$flag
+                }
+            }
+        }
+    }
+
+    # Sort and return the flags
+    return [lsort -command CompareFlags $flags]
+}
+
+
+#############################################################################
+# Parse a package line from the package.use file.
+#
+# Arguments:
+#   line        line to parse
+#   atomVar     name of the variable to hold the atom
+#   useAlignVar name of the variable to hold the column index for USE flags
+#   flagsVar    name of the variable to hold the USE flags
+#   commentVar  name of the variable to hold the line's ending comment
+#   comAlignVar name of the variable to hold the column index for the comment
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   boolean indicating success or failure of parse
+#############################################################################
+proc ParsePackageLine {line atomVar useAlignVar flagsVar commentVar comAlignVar} {
+    upvar 1 $atomVar atom $useAlignVar useAlign $flagsVar flags $commentVar comment $comAlignVar comAlign
+    # Parse the package line, fill in the variables and return the result
+    set success [regexp {^(([^#[:space:]]+)[[:space:]]+)((?:[^#[:space:]]+[[:space:]]*)*)(\#.*)?$} $line -> useAlign atom flags comment]
+    set useAlign [string length $useAlign]
+    set flags [list {*}$flags]
+    set comAlign [string first # $line]
+    return $success
+}
+
+
+#############################################################################
+# Pad a line with spaces up to a given target length.
+# If the line is already longer than the target length, append a single space.
+#
+# Arguments:
+#   lineVar     variable name to pad
+#   length      length to pad up to
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return: NONE
+#############################################################################
+proc PadLine {lineVar length} {
+    upvar 1 $lineVar line
+    # Get the size of the line
+    set size [string length $line]
+    # Pad the line with spaces
+    set line "$line [string repeat " " [expr {$length-$size-1}]]"
+}
+
+
+#############################################################################
+#############################################################################
+#
+# Globals
+#
+#############################################################################
+#############################################################################
+
+# Version number
+set version "0.1"
+
+# Path to USE file
+set usepath "/etc/portage/package.use"
+
+# Verbosity level
+set verbose 0
+
+# USE flag query results
+set query ""
+# Boolean holding whether only queries were done (no set/unset/reset)
+set queryonly 1
+
+# Help message
+set help "  Usage: [scriptName] \[options\] <atom> <USE flags>
+
+Add or remove package-specific USE flags.
+USE flags can take the following form:
+  +use | use            set the USE flag
+  -use                  unset the USE flag
+  %use                  reset the USE flag (remove it from the file)
+  ?use                  query the USE flag
+
+Options:
+  -f | --file <file>    use <file> instead of the default $usepath
+  -v | --verbose        print the resulting USE flags
+  -h | --help           print the help
+  -V | --version        print the script version
+"
+# TODO: --pretend   don't do any changes ; with --verbose, print what would be done
+# TODO: --comment   add comment at end of line
+# TODO: --sort      just sort the file
+
+
+#############################################################################
+#############################################################################
+#
+# Body
+#
+#############################################################################
+#############################################################################
+
+# Process command line arguments
+set args {}
+getopt flag arg $argv {
+    -f: - --file: {
+        # Define an alternate usepath
+        set usepath $arg
+    }
+    -v - --verbose {
+        # Increase the verbosity level
+        incr verbose
+    }
+    -h? - --help {
+        # Print the help
+        puts $help
+        exit 0
+    }
+    -V - --version {
+        # Report the version of the program
+        puts "Version: [scriptName] $version"
+        exit 0
+    }
+    missing {
+        puts stderr "Error: option requires argument: $arg"
+        exit 2
+    }
+    unknown {
+        puts stderr "Error: unknown or ambiguous option: $arg"
+        exit 2
+    }
+    arglist {
+        set args $arg
+    }
+}
+# Get the atom and USE flags
+set flagspecs [lassign $args atom]
+# No atom and/or USE flag specified, bail out
+if {$atom eq "" || ![llength $flagspecs]} {
+    puts stderr "Error: missing atom and/or USE flags"
+    exit 2
+}
+# Invalid atom, bail out
+if {![regexp {^[=<>]*([[:alnum:]]+)-[[:alnum:]]+/[[:alnum:]._-]+$} $atom - category]} {
+    puts stderr "Error: atom seems invalid: $atom"
+    exit 2
+}
+
+# Read in the USE file
+if {[catch {open $usepath r} fd]} {
+    puts stderr "Error: unable to read USE file $usepath"
+    exit 1
+}
+set usefile [split [read -nonewline $fd] "\n"]
+close $fd
+
+# Search for the atom
+set iline [lsearch -all -regexp $usefile "^[reEscape $atom]\[\[:space:\]\]"]
+# Sanity check: only 1 atom in the file
+if {[llength $iline] > 1} {
+    puts stderr "Error: more than 1 line match this atom"
+    exit 1
+} elseif {$iline eq ""} {
+    # Else if atom no found: add it
+    # Find and sort the atom's category block
+    set catblock [lsort -dictionary [lsearch -all -inline -regexp $usefile "^\[=<>\]*$category-"]]
+    if {$catblock ne ""} {
+        # Find the line that would be preceding the atom inside the block
+        set neighbor [lsearch -bisect -inline $catblock $atom]
+        if {$neighbor ne ""} {
+            # Get the index for the next line in the file
+            set insert [expr [lsearch -exact $usefile $neighbor]+1]
+        } else {
+            # Doesn't exist: atom would be the first of the block, take the current first line
+            set neighbor [lindex $catblock 0]
+            # Get the index for this line in the file
+            set insert [lsearch -exact $usefile $neighbor]
+        }
+        # Extract the alignment of this block using the neighbor line
+        if {![ParsePackageLine $neighbor - useAlign - - comAlign]} {
+            puts stderr "Error: unable to determine category alignment"
+            exit 1
+        }
+    } else {
+        # No category block, must create one
+        # Strip the file of comments and empty lines, then sort it
+        set blocks $usefile
+        lremove blocks [list {*}[lsearch -all -regexp {^[[:space:]]*#}] {*}[lsearch -all -regexp {^[[:space:]]*$}]]
+        set blocks [lsort -dictionary $blocks]
+        # Find the last line of the preceding category block
+        set neighbor [lsearch -bisect -inline $blocks $category]
+        if {$neighbor ne ""} {
+            # Get the index for this line in the file
+            set insert [lsearch -exact $usefile $neighbor]
+            # Find the ending empty line for the block
+            while {![string is space $neighbor]} {
+                incr insert
+                set neighbor [lindex $usefile $insert]
+            }
+        } else {
+            # Doesn't exist: block would be the first of the file, take the first line of the current first block
+            set neighbor [lindex $blocks 0]
+            # Get the index for this line in the file
+            set insert [lsearch -exact $usefile $neighbor]
+            # Find the opening empty line for the block
+            while {![string is space $neighbor]} {
+                incr insert -1
+                set neighbor [lindex $usefile $insert]
+            }
+        }
+
+        # Compute the USE flags alignment as a multiple of 4
+        set useAlign [string length $atom]
+        set useAlign [expr {$useAlign+4-($useAlign%4)}]
+        # Insert an empty line before creating the block
+        set usefile [linsert $usefile $insert ""]
+        incr insert
+    }
+
+    # Build the new line
+    set nline $atom
+    PadLine nline $useAlign
+    set nline "$nline[join [UpdateFlags {} $flagspecs]]"
+
+    # Insert it in the file
+    set usefile [linsert $usefile $insert $nline]
+} else {
+    # Else if atom found: update it
+    # Get the current line
+    set line [lindex $usefile $iline]
+    # Parse the line
+    if {![ParsePackageLine $line - useAlign flags comment comAlign]} {
+        puts stderr "Error: unable to parse current USE flags for this atom"
+        exit 1
+    }
+
+    # Update the USE flags
+    set flags [UpdateFlags $flags $flagspecs]
+    # Rebuild the line
+    set nline $atom
+    PadLine nline $useAlign
+    set nline "$nline[join $flags]"
+
+    # Process the comment
+    if {$comment ne ""} {
+        # Pad the line
+        PadLine nline $comAlign
+        # Append the comment
+        set nline "$nline$comment"
+    }
+
+    # Put the new line back in the file
+    lset usefile $iline $nline
+}
+
+# Write back the file unless we did nothing else but query USE flags
+if {!$queryonly} {
+    if {[catch {open $usepath w} fd]} {
+        puts stderr "Error: unable to write to USE file $usepath"
+        exit 1
+    }
+    puts $fd [join $usefile \n]
+    close $fd
+}
+
+# Display the query results
+if {$query ne ""} {
+    set query [lsort -command CompareFlags $query]
+    puts "Query: $atom [join $query]"
+}
+# If we're being verbose, display the resulting USE flags
+if {$verbose} {
+    puts "USE: $nline"
+}
+
