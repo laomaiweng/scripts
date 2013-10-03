@@ -1,0 +1,9 @@
+#!/bin/bash
+# die - print a message and exit on error, preserving original error code
+
+function die() {
+    local RC=$?
+    echo "Error: $1" 1>&2
+    exit $RC
+}
+
