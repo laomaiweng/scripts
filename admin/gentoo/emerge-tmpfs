@@ -1,0 +1,15 @@
+#!/bin/bash
+
+if [[ $# != 1 || "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "  Usage: ${0##*/} <size>
+
+Mount the Portage build directory as an in-RAM tmpfs. The size can be given in
+human-readable format or as a percentage of total RAM.
+Keep in mind that having a large tmpfs will decrease the amount of RAM
+available for the actual build!" >&2
+    exit
+fi
+
+sudo mount -t tmpfs -o size=$1,mode=775,uid=root,gid=portage tmpfs /var/tmp/portage/
+
