@@ -189,8 +189,8 @@ function path() {
                 shift
                 for d in "$@"
                 do
-                    [[ -z "$1" ]] && { echo "Error: empty directory path in DIRS!" >&2 ; return 1 ; }
-                    NEWPATH="$NEWPATH:$1"
+                    [[ -z "$d" ]] && { echo "Error: empty directory path in DIRS!" >&2 ; return 1 ; }
+                    NEWPATH="$NEWPATH:$d"
                 done
 
                 # Add new path directories list
