@@ -2,7 +2,9 @@
 
 if [[ -z "$1" ]]
 then
-    echo "Usage: ${0##*/} <global USE flag>"
+    echo "  Usage: ${0##*/} <global USE flag>
+
+Get the description of a global USE flag."
     exit
 fi
 

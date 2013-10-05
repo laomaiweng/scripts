@@ -2,7 +2,9 @@
 
 if [[ -z "$1" ]]
 then
-    echo "Usage: ${0##*/} <package>"
+    echo "  Usage: ${0##*/} <package>
+
+Get the description of package-specific USE flags."
     exit
 fi
 
