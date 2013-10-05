@@ -2,16 +2,17 @@
 
 if [[ "$1" == "-h" || "$1" == "--help" ]]
 then
-    echo "Usage: ${0##*/}"
-    echo "  Generates a kernel using /usr/src/linux/.config.cobalt."
-    echo "  Generates the corresponding initramfs with LVM, framebuffer"
-    echo "  and splash support. Also strips the initramfs from unneeded"
-    echo "  stuff (modules and HW detection logic)."
+    echo "  Usage: ${0##*/}
+
+Generates a kernel using /usr/src/linux/.config.cobalt.
+Generates the corresponding initramfs with LVM, framebuffer
+and splash support. Also strips the initramfs from unneeded
+stuff (modules and HW detection logic)."
     exit
 fi
 
 
-genkernel --save-config --mrproper --install --no-ramdisk-modules --no-all-ramdisk-modules --kernel-config=/usr/src/linux/.config.cobalt --mountboot --makeopts="-j9" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --lvm --no-mdadm --no-dmraid --no-luks --real-root="/dev/vg-cobalt-system/root" --kernname="cobalt" --no-firmware --compress-initramfs-type=gzip all
+genkernel --save-config --mrproper --install --symlink --no-ramdisk-modules --no-all-ramdisk-modules --kernel-config=/usr/src/linux/.config.cobalt --mountboot --makeopts="-j9" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --lvm --no-mdadm --no-dmraid --no-luks --kernname="cobalt" --no-firmware --compress-initramfs-type=gzip all
 
 
 echo
