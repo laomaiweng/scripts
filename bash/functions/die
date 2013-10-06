@@ -2,8 +2,26 @@
 # die - print a message and exit on error, preserving original error code
 
 function die() {
+    # Get return code
     local RC=$?
-    echo "Error: $1" 1>&2
-    exit $RC
+    # Parse arguments (don't die on unknown arg, we're already dying)
+    while [[ $# -gt 1 ]]
+    do
+        case "$1" in
+            "-p"|"--prefix")
+                local PREFIX="$2"
+                shift
+                ;;
+
+            "-i"|"--inline")
+                local PREFIX=""
+                ;;
+        esac
+        shift
+    done
+    # Print message
+    echo -e "${PREFIX-Error: }$1" 1>&2
+    # Exit with return code (return if interactive)
+    [[ $- == *i* ]] && return $RC || exit $RC
 }
 
