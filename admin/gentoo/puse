@@ -113,7 +113,7 @@ proc lremove {listVar indices} {
 proc ParseFlagspec {flagspec statusVar flagVar} {
     upvar 1 $statusVar status $flagVar flag
     # Parse the flagspec and return the result
-    return [regexp {^([?%+-]?)([[:alnum:]].*)$} $flagspec -> status flag]
+    return [regexp {^([?%+-]?)([[:alnum:]_+-]*)$} $flagspec -> status flag]
 }
 
 
