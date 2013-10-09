@@ -8,8 +8,14 @@ then
     exit
 fi
 
+# Source some useful functions
+source ${0%/*}/../bash/functions/url
+
+# Switch to C locale (Google returns some weird characters which we'd have to convert from ISO8859-1 to UTF-8 otherwise)
+export LANG=C
+
 # Query
-RESULT="`curl -s "http://www.google.com/ig/calculator?hl=en&q=$1$2=?$3&#8221" | iconv -f ISO8859-1 -t UTF8`"
+RESULT="`curl -s "http://www.google.com/ig/calculator?hl=en&q=$(urlencode $1)$(urlencode $2)=?$(urlencode $3)&#8221"`"
 
 # Check for error
 ERROR="`echo "$RESULT" | sed -e 's/^{lhs: "[^"]*",rhs: "[^"]*",error: "\([^"]*\)".*$/\1/'`"
@@ -19,6 +25,6 @@ then
     exit 1
 fi
 
-# Print response
-echo "$RESULT" | sed -e 's/^{lhs: "[^"]*",rhs: "\([^ ]*\)[^"]*".*$/\1/'
+# Print response (filter out garbage characters)
+echo "$RESULT" | sed -e 's/^{lhs: "[^"]*",rhs: "\([^ ]*\)[^"]*".*$/\1/' | tr -cd '0-9.\n'
 
