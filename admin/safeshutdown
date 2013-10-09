@@ -8,7 +8,7 @@
 GRUBREBOOT_ALTERNATIVES="grub-reboot grub2-reboot"
 
 # Source some useful functions
-source ${0%/*}/../../bash/functions/die
+source ${0%/*}/../bash/functions/die
 
 
 # Help message
