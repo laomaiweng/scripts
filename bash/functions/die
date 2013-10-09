@@ -4,23 +4,31 @@
 function die() {
     # Get return code
     local RC=$?
+    local PREFIX="Error: "
     # Parse arguments (don't die on unknown arg, we're already dying)
     while [[ $# -gt 1 ]]
     do
         case "$1" in
-            "-p"|"--prefix")
-                local PREFIX="$2"
-                shift
+            -i|--inline)
+                PREFIX=""
                 ;;
 
-            "-i"|"--inline")
-                local PREFIX=""
+            -p*|--prefix)
+                PREFIX=""
+                [[ "${1:0:2}" == "-p" ]] && PREFIX=${1#-p}
+                [[ -z "$PREFIX" ]] && { PREFIX="$2" ; shift ; }
+                ;;
+
+            -r*|--return)
+                RC=""
+                [[ "${1:0:2}" == "-r" ]] && RC=${1#-r}
+                [[ -z "$RC" ]] && { RC="$2" ; shift ; }
                 ;;
         esac
         shift
     done
     # Print message
-    echo -e "${PREFIX-Error: }$1" 1>&2
+    echo -e "$PREFIX$1" 1>&2
     # Exit with return code (return if interactive)
     [[ $- == *i* ]] && return $RC || exit $RC
 }
