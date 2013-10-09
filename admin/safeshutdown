@@ -66,9 +66,12 @@ w
 echo
 echo -ne "\033[01;37mDo you really want to shutdown the computer? yes/no:\033[00m "
 read ANS
-
 case "$ANS" in
     [Yy][Ee][Ss])
+        # Bail out on error
+        set -e
+
+        # Set the entry to reboot on for Grub
         if [[ -n "$GRUBENTRY" ]]
         then
             # Find grub-reboot
@@ -79,8 +82,24 @@ case "$ANS" in
             done
             [[ -z "$GRUBREBOOT" ]] && error "grub-reboot not found" 1
 
+            # Mount the boot partition if required
+            UNMOUNT_BOOT=false
+            if grep -Eq '\B/boot\>' /etc/fstab
+            then
+                # /boot must be mounted, check if it is
+                if ! grep -Eq '\B/boot\>' /etc/mtab
+                then
+                    # /boot is not mounted, let's mount it
+                    sudo mount /boot
+                    UNMOUNT_BOOT=true
+                fi
+            fi
+
             # Set the grub entry for next bootup
             sudo "$GRUBREBOOT" "$GRUBENTRY"
+
+            # Unmount /boot it it was unmouted
+            [[ "$UNMOUNT_BOOT" == "true" ]] && sudo umount /boot
         fi
 
         # Shutdown
