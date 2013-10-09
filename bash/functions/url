@@ -1,0 +1,38 @@
+#!/bin/bash
+# urlencode - encode special characters in a string so that it may be used in a URL
+# urldecode - decode special characters in a URL
+#
+# Credits go to Orwellophile @ http://stackoverflow.com/questions/296536/urlencode-from-a-bash-script
+
+function urlencode() {
+    local STR="$1"
+    local STRLEN=${#STR}
+    local URL=""
+
+    # Loop over the string
+    for (( POS=0 ; POS<STRLEN ; POS++ ))
+    do
+        C="${STR:$POS:1}"
+        case "$C" in
+            [-_.~a-zA-Z0-9])
+                O="$C"
+                ;;
+
+            *)
+                printf -v O '%%%02x' "'$C"
+                ;;
+        esac
+        URL+="$O"
+    done
+
+    echo "$URL"
+}
+
+
+function urldecode() {
+    # This is perhaps a risky gambit, but since all escape characters must be
+    # encoded, we can replace %NN with \xNN and pass the lot to printf -b, which
+    # will decode hex for us
+    printf '%b\n' "${1//%/\\x}"
+}
+
