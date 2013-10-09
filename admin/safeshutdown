@@ -7,11 +7,8 @@
 # grub-reboot alternatives
 GRUBREBOOT_ALTERNATIVES="grub-reboot grub2-reboot"
 
-# Error function
-function error() {  # 1:message 2:code
-    echo "Error: $1" >&2
-    exit $2
-}
+# Source some useful functions
+source ${0%/*}/../../bash/functions/die
 
 
 # Help message
@@ -39,7 +36,7 @@ do
     case "$1" in
         "-g"|"--grub")
             GRUBENTRY="$2"
-            [[ -z "$GRUBENTRY" ]] && error "empty grub entry" 1
+            [[ -z "$GRUBENTRY" ]] && die -r1 "empty grub entry"
             shift 2
             ;;
 
@@ -65,9 +62,10 @@ w
 # Shutdown if the user confirms
 echo
 echo -ne "\033[01;37mDo you really want to shutdown the computer? yes/no:\033[00m "
+declare -u ANS
 read ANS
 case "$ANS" in
-    [Yy][Ee][Ss])
+    YES)
         # Bail out on error
         set -e
 
@@ -80,7 +78,7 @@ case "$ANS" in
             do
                 which $gr &> /dev/null && { GRUBREBOOT=$gr ; break ; }
             done
-            [[ -z "$GRUBREBOOT" ]] && error "grub-reboot not found" 1
+            [[ -z "$GRUBREBOOT" ]] && die -r1 "grub-reboot not found"
 
             # Mount the boot partition if required
             UNMOUNT_BOOT=false
@@ -107,7 +105,7 @@ case "$ANS" in
         sudo shutdown ${OPTS:-"$@"}
         ;;
 
-    [Nn][Oo])
+    NO)
         ;;
 
     *)
