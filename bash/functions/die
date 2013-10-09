@@ -2,13 +2,27 @@
 # die - print a message and exit on error, preserving original error code
 
 function die() {
-    # Get return code
+    # Get the last return code
     local RC=$?
     local PREFIX="Error: "
+    local MSG
     # Parse arguments (don't die on unknown arg, we're already dying)
-    while [[ $# -gt 1 ]]
+    while [[ $# -gt 0 ]]
     do
         case "$1" in
+            -h|--help)
+                # Special case: print help and return (no exit)
+                echo "  Usage: $FUNCNAME [options] [error message]
+
+Options:
+  -i|--inline               only print the error message (no prefix)
+  -p|--prefix <prefix>      set the prefix preceding the error message
+                            default: \"Error: \"
+  -r|--return <code>        set the return code
+                            default: \$?"
+                return
+                ;;
+
             -i|--inline)
                 PREFIX=""
                 ;;
@@ -24,11 +38,28 @@ function die() {
                 [[ "${1:0:2}" == "-r" ]] && RC=${1#-r}
                 [[ -z "$RC" ]] && { RC="$2" ; shift ; }
                 ;;
+
+            --)
+                shift
+                break
+                ;;
+
+            *)
+                break
+                ;;
         esac
         shift
     done
+    # Get the message
+    while [[ $# -gt 0 ]]
+    do
+        MSG="${MSG:+$MSG }$1"
+        shift
+    done
+    # Handle empty message a bit differently
+    [[ -z "$MSG" ]] && { PREFIX="" ; MSG="Error!" ; }
     # Print message
-    echo -e "$PREFIX$1" 1>&2
+    echo -e "$PREFIX$MSG" 1>&2
     # Exit with return code (return if interactive)
     [[ $- == *i* ]] && return $RC || exit $RC
 }
