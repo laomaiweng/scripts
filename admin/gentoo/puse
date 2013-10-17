@@ -443,9 +443,10 @@ ${flagdesc}s can take the following form:
   %$mode                  reset the $flagdesc (remove it from the file)
   ?$mode                  query the $flagdesc
 "
-# TODO: --pretend   don't do any changes ; with --verbose, print what would be done
-# TODO: --comment   add comment at end of line
-# TODO: --sort      just sort the file
+        # TODO: --pretend   don't do any changes ; with --verbose, print what would be done
+        # TODO: --comment   add comment at end of line
+        # TODO: --sort      just sort the file
+        # TODO: multiple --verbose switches increase the level of verbosity
         exit 0
     }
     -V - --version {
@@ -489,7 +490,7 @@ if {[llength $iline] > 1} {
 } elseif {$iline eq ""} {
     # Else if atom no found: add it
     # Find and sort the atom's category block
-    set catblock [lsort -dictionary [lsearch -all -inline -regexp $file "^\[=<>\]*$category-"]]
+    set catblock [lsort -dictionary [lsearch -all -inline -regexp $file "^\[=<>\][reEscape *$category]-"]]
     if {$catblock ne ""} {
         # Find the line that would be preceding the atom inside the block
         set neighbor [lsearch -bisect -inline $catblock $atom]
@@ -509,9 +510,7 @@ if {[llength $iline] > 1} {
     } else {
         # No category block, must create one
         # Strip the file of comments and empty lines, then sort it
-        set blocks $file
-        lremove blocks [list {*}[lsearch -all -regexp {^[[:space:]]*#}] {*}[lsearch -all -regexp {^[[:space:]]*$}]]
-        set blocks [lsort -dictionary $blocks]
+        set blocks [lsort -dictionary [lsearch -all -inline -not -regexp $file {^[[:space:]]*(?:#.*)?$}]]
         # Find the last line of the preceding category block
         set neighbor [lsearch -bisect -inline $blocks $category]
         if {$neighbor ne ""} {
