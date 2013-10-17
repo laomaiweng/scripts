@@ -1,0 +1,102 @@
+#!/bin/bash
+
+## http://www.ibm.com/developerworks/edu/l-dw-linuxfw-i.html
+
+# Our complete stateful firewall script.  This firewall can be customized for
+# a laptop, workstation, router or even a server. :)
+
+# All your network interfaces, including lo.
+#INTERFACES="lo eth0 wlan0"
+INTERFACES="lo eth0"
+
+# The interfaces that provides your "uplink".
+#UPLINK="eth0 wlan0"
+UPLINK="eth0"
+
+# The local (ie., trusted) interfaces.
+LOCAL="lo"
+
+# Change this line so that it lists the assigned numbers or symbolic names (from
+# /etc/services) of all the services that you'd like to provide to the general
+# public.  If you don't want any services enabled, set it to "".
+SERVICES_TCP=""
+SERVICES_UDP=""
+
+
+function start_fw6
+{
+    echo -n "Starting IPv6 firewall... "
+
+    # Input table default policy : DROP.
+    ip6tables -P INPUT DROP
+
+    # Accept local (trusted) traffic.
+    for x in ${LOCAL}
+    do
+        ip6tables -A INPUT -i ${x} -j ACCEPT
+    done
+
+    # Accept ESTABLISHED or RELATED connections.
+    ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+    # Enable public access to global services.
+    for x in ${SERVICES_TCP}
+    do
+        ip6tables -A INPUT -p tcp --dport ${x} -m conntrack --ctstate NEW -j LOG --log-prefix "[ip6tables] TCP service:"
+        ip6tables -A INPUT -p tcp --dport ${x} -m conntrack --ctstate NEW -j ACCEPT
+    done
+    for x in ${SERVICES_UDP}
+    do
+        ip6tables -A INPUT -p udp --dport ${x} -m conntrack --ctstate NEW -j LOG --log-prefix "[ip6tables] UDP service:"
+        ip6tables -A INPUT -p udp --dport ${x} -m conntrack --ctstate NEW -j ACCEPT
+    done
+
+    # Log and reject attempts at SSH connection on port 22 separately.
+    ip6tables -A INPUT -p tcp --dport ssh -m conntrack --ctstate NEW -j LOG --log-prefix "[ip6tables] ssh22fail:"
+    ip6tables -A INPUT -p tcp --dport ssh -m conntrack --ctstate NEW -j DROP
+
+    # Other rejected attempts.
+    ip6tables -A INPUT -p tcp -j LOG --log-prefix "[ip6tables] bad TCP:"
+    ip6tables -A INPUT -p udp -j LOG --log-prefix "[ip6tables] bad UDP:"
+    ip6tables -A INPUT -p tcp -j DROP
+    ip6tables -A INPUT -p udp -j DROP
+
+    # Accept ICMPv6 packets, which are required for MAC address resolution.
+    ip6tables -A INPUT -p icmpv6 -j ACCEPT
+
+    # Only non-UDP/TCP eth0 traffic might end up here: low-level traffic.
+    ip6tables -A INPUT -j LOG --log-prefix "[ip6tables] bad other:"
+
+    # Output table default policy: ACCEPT.
+    ip6tables -P OUTPUT ACCEPT
+
+    echo "done"
+}
+
+function stop_fw6
+{
+    echo -n "Stopping IPv6 firewall... "
+
+    ip6tables -F INPUT
+    ip6tables -P INPUT ACCEPT
+    ip6tables -F OUTPUT
+    ip6tables -P OUTPUT ACCEPT
+
+    echo "done"
+}
+
+if [ "$1" = "start" ]
+then
+    start_fw6
+elif [ "$1" = "stop" ]
+then
+    stop_fw6
+elif [ "$1" = "restart" ]
+then
+    stop_fw6
+    start_fw6
+else
+    echo "SYNTAX: ${0##*/} <start|stop|restart>"
+fi
+
+exit 0

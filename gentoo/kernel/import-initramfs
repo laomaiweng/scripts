@@ -1,0 +1,132 @@
+#!/bin/bash
+
+
+# Usage function
+function usage() {
+    echo "Usage: ${0##*/} <FILE> <DIR>"                                             >& 2
+    echo "  Imports the files listed in FILE into the file hierarchy rooted at DIR" >& 2
+    echo "  /!\\ FILE is expected to describe files as the kernel's initramfs"      >& 2
+    echo "      packaging system would expect them"                                 >& 2
+    exit 0
+}
+
+
+# Check number of arguments
+if [[ $# -ne 2 || "$1" == "-h" || "$1" == "--help" ]]
+then
+    usage
+fi
+
+# Check the given FILE
+FILE="$1"
+if [[ ! -f "$FILE" ]]
+then
+    echo "ERROR: $FILE is not a file!" >& 2
+    exit 1
+fi
+
+# Check the given DIR
+ROOT="$2"
+if [[ ! -d "$ROOT" ]]
+then
+    echo "ERROR: $ROOT is not a directory!" >& 2
+    exit 1
+fi
+
+
+# Output colorization
+BLACK='\E[0m'           # Not real black: default setting, in fact
+RED='\E[1;31;31m'       # Bold red color
+GREEN='\E[1;32;32m'     # Bold green color
+
+
+# Indices for the parameter arrays
+D_NAME=0
+D_MODE=1
+D_OWNER=2
+D_GROUP=3
+N_NAME=0
+N_MODE=1
+N_OWNER=2
+N_GROUP=3
+N_TYPE=4
+N_MAJOR=5
+N_MINOR=6
+F_SRC=0
+F_DST=1
+F_MODE=2
+F_OWNER=3
+F_GROUP=4
+
+# Loop over the contents of FILE
+while read TYPE PARAMS
+do
+    case "$TYPE" in
+        "dir")
+            # Build the parameter array
+            declare -a D_PARAMS
+            D_PARAMS=( $PARAMS )
+            D_DIR="$ROOT${D_PARAMS[$D_NAME]}"
+
+            # Create the directory
+            echo -n "    "
+            if [[ ! -e "$D_DIR" ]]
+            then
+                mkdir -p -m=${D_PARAMS[$D_MODE]} "$D_DIR"
+                chown ${D_PARAMS[$D_OWNER]}:${D_PARAMS[$D_GROUP]} "$D_DIR"
+                echo -e -n "${GREEN}created${BLACK}"
+            else
+                echo -e -n "${RED}exists ${BLACK}"
+            fi
+            echo -e "\tdir ${D_PARAMS[*]}"
+            ;;
+
+        "nod")
+            # Build the parameter array
+            declare -a N_PARAMS
+            N_PARAMS=( $PARAMS )
+            N_NOD="$ROOT${N_PARAMS[$N_NAME]}"
+
+            # Create the node
+            echo -n "    "
+            if [[ ! -e "$N_NOD" ]]
+            then
+                mknod -m=${N_PARAMS[$N_MODE]} "$N_NOD" ${N_PARAMS[$N_TYPE]} ${N_PARAMS[$N_MAJOR]} ${N_PARAMS[$N_MINOR]}
+                chown ${N_PARAMS[$N_OWNER]}:${N_PARAMS[$N_GROUP]} "$N_NOD"
+                echo -e -n "${GREEN}created${BLACK}"
+            else
+                echo -e -n "${RED}exists ${BLACK}"
+            fi
+            echo -e "\tnod ${N_PARAMS[*]}"
+            ;;
+
+        "file")
+            # Build the parameter array
+            declare -a F_PARAMS
+            F_PARAMS=( $PARAMS )
+            F_FILE="$ROOT${F_PARAMS[$F_DST]}"
+
+            # Copy the file
+            echo -n "    "
+            if [[ ! -e "$F_FILE" ]]
+            then
+                cp -L "${F_PARAMS[$F_SRC]}" "$F_FILE"
+                chown ${F_PARAMS[$F_OWNER]}:${F_PARAMS[$F_GROUP]} "$F_FILE"
+                chown ${F_PARAMS[$F_MODE]} "$F_FILE"
+                echo -e -n "${GREEN}copied ${BLACK}"
+            else
+                echo -e -n "${RED}exists ${BLACK}"
+            fi
+            echo -e "\tfile ${F_PARAMS[*]}"
+            ;;
+
+        *)
+            if [[ -n "$TYPE" ]]
+            then
+                echo "ERROR: invalid type '$TYPE'!"
+                exit 2
+            fi
+            ;;
+    esac
+done < "$FILE"
+

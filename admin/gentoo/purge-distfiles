@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# Help message
+if [[ "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "Usage: ${0##*/}
+
+Remove all files (except hidden ones) in the directory specified by the DISTDIR
+environment variable. If unset, it is sourced from Portage's make.conf. If
+still unset, it defaults to /usr/portage/distfiles." >&2
+    exit
+fi
+
+# DISTDIR unset: source Portage config or default to /usr/portage/distfiles
+[[ -z "$DISTDIR" ]] && . /etc/portage/make.conf
+[[ -z "$DISTDIR" ]] && DISTDIR=/usr/portage/distfiles
+
+# Check that the directory exists
+[[ ! -d "$DISTDIR" ]] && { echo "Error: $DISTDIR does not exist" ; exit 1 ; }
+
+# Confirm then delete everything (except dotfiles) in the distfiles directory
+echo -n "Purge $DISTDIR? [y/N] "
+declare -u ANS
+read ANS
+[[ "$ANS" == "Y" ]] && rm -Rf "$DISTDIR"/*
+

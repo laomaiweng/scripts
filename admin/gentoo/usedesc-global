@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if [[ -z "$1" ]]
+then
+    echo "  Usage: ${0##*/} <global USE flag>
+
+Get the description of a global USE flag."
+    exit
+fi
+
+grep "^$1" /usr/portage/profiles/use.desc
+

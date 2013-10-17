@@ -1,0 +1,12 @@
+#!/bin/bash
+
+if [[ -z "$1" ]]
+then
+    echo "  Usage: ${0##*/} <package>
+
+Get the description of package-specific USE flags."
+    exit
+fi
+
+grep "$1:" /usr/portage/profiles/use.local.desc
+
