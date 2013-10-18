@@ -342,10 +342,10 @@ proc UpdateFlags {flags flagspecs} {
 }
 
 #############################################################################
-# Parse a package line from the package.use file.
+# Parse an atom line.
 #
 # Arguments:
-#   line            line to parse
+#   line            atom line to parse
 #   atomVar         name of the variable to hold the atom
 #   flagAlignVar    name of the variable to hold the column index for flags
 #   flagsVar        name of the variable to hold the flags
@@ -490,7 +490,7 @@ if {[llength $iline] > 1} {
 } elseif {$iline eq ""} {
     # Else if atom no found: add it
     # Find and sort the atom's category block
-    set catblock [lsort -dictionary [lsearch -all -inline -regexp $file "^\[=<>\][reEscape *$category]-"]]
+    set catblock [lsort -dictionary [lsearch -all -inline -regexp $file "^\[=<>\]*[reEscape $category]-"]]
     if {$catblock ne ""} {
         # Find the line that would be preceding the atom inside the block
         set neighbor [lsearch -bisect -inline $catblock $atom]
@@ -545,7 +545,7 @@ if {[llength $iline] > 1} {
     set flags [UpdateFlags {} $flagspecs]
     set nline $atom
     PadLine nline $flagAlign
-    set nline "$nline[join $flags]]"
+    set nline "$nline[join $flags]"
 
     # Insert it in the file
     set file [linsert $file $insert $nline]
