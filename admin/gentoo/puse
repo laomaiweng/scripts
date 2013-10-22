@@ -451,7 +451,7 @@ ${flagdesc}s can take the following form:
     }
     -V - --version {
         # Report the version of the program
-        puts "Version: [scriptName] $version"
+        puts "[scriptName] version $version"
         exit 0
     }
     missing {
