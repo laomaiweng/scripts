@@ -560,21 +560,27 @@ if {[llength $iline] > 1} {
 
     # Update the flags
     set flags [UpdateFlags $flags $flagspecs]
-    # Rebuild the line
-    set nline $atom
-    PadLine nline $flagAlign
-    set nline "$nline[join $flags]"
+    # Check whether any flags remain
+    if {[llength $flags]} {
+        # Rebuild the line
+        set nline $atom
+        PadLine nline $flagAlign
+        set nline "$nline[join $flags]"
 
-    # Process the comment
-    if {$comment ne ""} {
-        # Pad the line
-        PadLine nline $comAlign
-        # Append the comment
-        set nline "$nline$comment"
+        # Process the comment
+        if {$comment ne ""} {
+            # Pad the line
+            PadLine nline $comAlign
+            # Append the comment
+            set nline "$nline$comment"
+        }
+
+        # Put the new line back in the file
+        lset file $iline $nline
+    } else {
+        # Empty flags, remove the line
+        lremove file $iline
     }
-
-    # Put the new line back in the file
-    lset file $iline $nline
 }
 
 # Write back the file unless we did nothing else but query flags
