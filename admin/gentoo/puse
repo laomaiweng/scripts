@@ -9,6 +9,8 @@
 #   * keywords in package.accept_keywords when called as 'pkey'             #
 #   * licenses in package.license when called as 'plic'                     #
 #                                                                           #
+# Atom names are parsed as per PMS EAPI 5.
+#                                                                           #
 # History:                                                                  #
 #   v0.2    Diversification: handle keywords and licenses                   #
 #   v0.1    Initial version: handle USE flags only                          #
@@ -45,6 +47,8 @@ set mode ""
 
 # Flag description (used in messages ; set by [SetupMode])
 set flagdesc ""
+# Flagspec status regexp
+set flagstatusrx {[?%+-]}
 # Flagspec regexp capturing status (+-?%) and flag (set by [SetupMode])
 set flagrx ""
 
@@ -61,6 +65,14 @@ set query ""
 # Boolean holding whether only queries were done (no set/unset/reset)
 set queryonly 1
 
+# Atom regexps
+set constraint_rx {(?:<|<=|=|>=|>)}
+set category_rx {(?:[a-zA-Z0-9_][a-zA-Z0-9_+.-]*)}
+set package_rx {(?:[a-zA-Z0-9_][a-zA-Z0-9_+]*(?:-(?:[a-zA-Z0-9_+]*-)*[a-zA-Z_+]*)?)}
+set version_rx {(?:[0-9]+(\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?(?:-r[0-9]+))}
+set use_rx {(?:[a-zA-Z0-9][a-zA-Z0-9@_+-]*)}
+set keyword_rx {(?:~?[a-zA-Z0-9_][a-zA-Z0-9_-]*)}
+set license_rx {(?:[[:graph:]]+)}
 
 #############################################################################
 #############################################################################
@@ -187,7 +199,7 @@ proc SetupMode {m} {
             # Setup variables
             set path "/etc/portage/package.accept_keywords"
             set flagdesc "keyword"
-            set flagrx {^([?%+-]?)(~?[[:alnum:]*]+)$}
+            set flagrx "^(${flagstatusrx}?)(${keyword_rx})\$"
         }
 
         "lic" {
@@ -196,7 +208,7 @@ proc SetupMode {m} {
             # Setup variables
             set path "/etc/portage/package.license"
             set flagdesc "license"
-            set flagrx {^([?%+-]?)([[:alnum:].-]+)$}
+            set flagrx "^(${flagstatusrx}?)(${license_rx})\$"
         }
 
         "use" -
@@ -206,7 +218,7 @@ proc SetupMode {m} {
             # Setup variables
             set path "/etc/portage/package.use"
             set flagdesc "USE flag"
-            set flagrx {^([?%+-]?)([[:alnum:]_+-]+)$}
+            set flagrx "^(${flagstatusrx}?)(${use_rx})\$"
         }
     }
 
@@ -362,7 +374,7 @@ proc UpdateFlags {flags flagspecs} {
 proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar} {
     upvar 1 $atomVar atom $flagAlignVar flagAlign $flagsVar flags $commentVar comment $comAlignVar comAlign
     # Parse the package line, fill in the variables and return the result
-    set success [regexp {^(([^#[:space:]]+)[[:space:]]+)((?:[^#[:space:]]+[[:space:]]*)*)(\#.*)?$} $line -> flagAlign atom flags comment]
+    set success [regexp {^(([^#[:space:]]+)\s+)((?:[^#[:space:]]+\s*)*)(\#.*)?$} $line -> flagAlign atom flags comment]
     set flagAlign [string length $flagAlign]
     set flags [list {*}$flags]
     set comAlign [string first # $line]
@@ -471,9 +483,10 @@ if {$atom eq "" || ![llength $flagspecs]} {
     die "missing atom and/or ${flagdesc}s" 2
 }
 # Invalid atom, bail out
-if {![regexp {^[=<>]*([[:alnum:]]+)-[[:alnum:]]+/[[:alnum:]._-]+$} $atom - category]} {
+if {![regexp "^${constraint_rx}?(${category_rx})/${package_rx}(?:-${version_rx})?\$" $atom -> category]} {
     die "atom seems invalid: $atom" 2
 }
+set category [lindex [split $category -] 0]
 
 # Read in the file
 if {[catch {open $path r} fd]} {
@@ -483,14 +496,14 @@ set file [split [read -nonewline $fd] "\n"]
 close $fd
 
 # Search for the atom
-set iline [lsearch -all -regexp $file "^[reEscape $atom]\[\[:space:\]\]"]
+set iline [lsearch -all -regexp $file "^[reEscape $atom]\\s"]
 # Sanity check: only 1 atom in the file
 if {[llength $iline] > 1} {
     die "more than 1 line match this atom" 1
 } elseif {$iline eq ""} {
     # Else if atom no found: add it
     # Find and sort the atom's category block
-    set catblock [lsort -dictionary [lsearch -all -inline -regexp $file "^\[=<>\]*[reEscape $category]-"]]
+    set catblock [lsort -dictionary [lsearch -all -inline -regexp $file "^${constraint_rx}?[reEscape $category]-"]]
     if {$catblock ne ""} {
         # Find the line that would be preceding the atom inside the block
         set neighbor [lsearch -bisect -inline $catblock $atom]
@@ -510,7 +523,7 @@ if {[llength $iline] > 1} {
     } else {
         # No category block, must create one
         # Strip the file of comments and empty lines, then sort it
-        set blocks [lsort -dictionary [lsearch -all -inline -not -regexp $file {^[[:space:]]*(?:#.*)?$}]]
+        set blocks [lsort -dictionary [lsearch -all -inline -not -regexp $file {^\s*(?:#.*)?$}]]
         # Find the last line of the preceding category block
         set neighbor [lsearch -bisect -inline $blocks $category]
         if {$neighbor ne ""} {
