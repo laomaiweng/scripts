@@ -1,0 +1,43 @@
+#!/bin/bash
+# Check whether files that should be hardlinked indeed point to the same inode
+
+# Check the arguments
+if [[ $# != 1 || "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "  Usage: ${0##*/} <hardlinks file>
+
+Check the consistency of hardlinks described in the file given as a parameter:
+all files must map to the same inode number.
+The hardlinks file should contain a series of lines, each line consisting of a
+list of files sharing the same inode."
+    exit
+fi
+
+# Read the hardlinks file line by line
+while read FILES
+do
+    # Check that all files on a single line share the same inode
+    INODE=0
+    for F in $FILES
+    do
+        # Check that the file exists
+        if [[ ! -f "$F" ]]
+        then
+            echo "Missing: $F"
+            continue
+        fi
+        # Get the file's inode
+        IF=$(ls -i "$F" | cut -d" " -f1)
+        # Take the inode of the first file as a reference
+        if [[ $INODE == 0 ]]
+        then
+            INODE=$IF
+        # If inodes do not match, print an error
+        elif [[ $INODE != $IF ]]
+        then
+            echo "Mismatch: $FILES"
+            break
+        fi
+    done
+done < "$1"
+
