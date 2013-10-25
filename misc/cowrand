@@ -10,5 +10,5 @@ CMAND=${COWMANDS[$(($RANDOM % 2))]}
 CSTATE=${COWSTATES[$(($RANDOM % 9))]}
 
 # Cowsay invocation
-$CMAND $CSTATE $*
+$CMAND $CSTATE "$@"
 
