@@ -69,7 +69,7 @@ set queryonly 1
 set constraint_rx {(?:<|<=|=|>=|>)}
 set category_rx {(?:[a-zA-Z0-9_][a-zA-Z0-9_+.-]*)}
 set package_rx {(?:[a-zA-Z0-9_][a-zA-Z0-9_+]*(?:-(?:[a-zA-Z0-9_+]*-)*[a-zA-Z_+]*)?)}
-set version_rx {(?:[0-9]+(\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?(?:-r[0-9]+))}
+set version_rx {(?:[0-9]+(?:\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?(?:-r[0-9]+)?)}
 set use_rx {(?:[a-zA-Z0-9][a-zA-Z0-9@_+-]*)}
 set keyword_rx {(?:~?[a-zA-Z0-9_][a-zA-Z0-9_-]*)}
 set license_rx {(?:[[:graph:]]+)}
@@ -121,7 +121,7 @@ proc scriptName {} {
 #############################################################################
 proc die {message {code 1} {prefix "Error: "}} {
     # Print the message
-    puts stderr $prefix$message
+    puts stderr ${prefix}${message}
     # Exit with the given return code
     exit $code
 }
@@ -175,10 +175,14 @@ proc lremove {listVar indices} {
 #   m           user operating mode (possibly invalid)
 #
 # Globals:
-#   mode        selected operating mode
-#   flagdesc    flag description
-#   flagrx      flagspec regexp
-#   path        path to the default target file of the mode
+#   mode            selected operating mode
+#   flagdesc        flag description
+#   flagstatusrx    flag status regexp
+#   flagrx          flagspec regexp
+#   path            path to the default target file of the mode
+#   use_rx          USE flag regexp
+#   keyword_rx      keyword regexp
+#   license_rx      license regexp
 #
 # Variables: NONE
 #
@@ -188,8 +192,12 @@ proc lremove {listVar indices} {
 proc SetupMode {m} {
     global mode
     global flagdesc
+    global flagstatusrx
     global flagrx
     global path
+    global use_rx
+    global keyword_rx
+    global license_rx
 
     # Switch according to the given mode, defaulting to "use" mode
     switch $m {
@@ -247,7 +255,7 @@ proc ParseFlagspec {flagspec statusVar flagVar} {
     upvar 1 $statusVar status $flagVar flag
 
     # Parse the flagspec according to the mode's regexp and return the result
-    return [regexp $flagrx $flagspec -> status flag]
+    return [regexp -- $flagrx $flagspec -> status flag]
 }
 
 #############################################################################
@@ -374,7 +382,7 @@ proc UpdateFlags {flags flagspecs} {
 proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar} {
     upvar 1 $atomVar atom $flagAlignVar flagAlign $flagsVar flags $commentVar comment $comAlignVar comAlign
     # Parse the package line, fill in the variables and return the result
-    set success [regexp {^(([^#[:space:]]+)\s+)((?:[^#[:space:]]+\s*)*)(\#.*)?$} $line -> flagAlign atom flags comment]
+    set success [regexp -- {^(([^#[:space:]]+)\s+)((?:[^#[:space:]]+\s*)*)(\#.*)?$} $line -> flagAlign atom flags comment]
     set flagAlign [string length $flagAlign]
     set flags [list {*}$flags]
     set comAlign [string first # $line]
@@ -483,7 +491,7 @@ if {$atom eq "" || ![llength $flagspecs]} {
     die "missing atom and/or ${flagdesc}s" 2
 }
 # Invalid atom, bail out
-if {![regexp "^${constraint_rx}?(${category_rx})/${package_rx}(?:-${version_rx})?\$" $atom -> category]} {
+if {![regexp -- "^${constraint_rx}?(${category_rx})/${package_rx}(?:-${version_rx})?\$" $atom -> category]} {
     die "atom seems invalid: $atom" 2
 }
 set category [lindex [split $category -] 0]
