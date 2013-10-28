@@ -623,3 +623,4 @@ if {$verbose} {
     puts "${flagdesc}s: $flags"
 }
 
+# vim:ft=tcl
