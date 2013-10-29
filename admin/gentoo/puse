@@ -9,7 +9,7 @@
 #   * keywords in package.accept_keywords when called as 'pkey'             #
 #   * licenses in package.license when called as 'plic'                     #
 #                                                                           #
-# Atom names are parsed as per PMS EAPI 5.
+# Atoms are parsed as per PMS EAPI 5 as DEPEND atoms.                       #
 #                                                                           #
 # History:                                                                  #
 #   v0.2    Diversification: handle keywords and licenses                   #
@@ -65,11 +65,12 @@ set query ""
 # Boolean holding whether only queries were done (no set/unset/reset)
 set queryonly 1
 
-# Atom regexps
+# DEPEND atom regexps
+# Differs from regular EAPI 5 atom regexps in that a single '*' is allowed at the end of the version string
 set constraint_rx {(?:<|<=|=|>=|>)}
 set category_rx {(?:[a-zA-Z0-9_][a-zA-Z0-9_+.-]*)}
 set package_rx {(?:[a-zA-Z0-9_][a-zA-Z0-9_+]*(?:-(?:[a-zA-Z0-9_+]*-)*[a-zA-Z_+]*)?)}
-set version_rx {(?:[0-9]+(?:\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?(?:-r[0-9]+)?)}
+set version_rx {(?:[0-9]+(?:\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?(?:-r[0-9]+)?\*?)}
 set use_rx {(?:[a-zA-Z0-9][a-zA-Z0-9@_+-]*)}
 set keyword_rx {(?:~?[a-zA-Z0-9_][a-zA-Z0-9_-]*)}
 set license_rx {(?:[[:graph:]]+)}
@@ -490,7 +491,7 @@ set flagspecs [lassign $args atom]
 if {$atom eq "" || ![llength $flagspecs]} {
     die "missing atom and/or ${flagdesc}s" 2
 }
-# Invalid atom, bail out
+# Check the atom and extract the category
 if {![regexp -- "^${constraint_rx}?(${category_rx})/${package_rx}(?:-${version_rx})?\$" $atom -> category]} {
     die "atom seems invalid: $atom" 2
 }
