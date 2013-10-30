@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Source some useful functions
+source ${0%/*}/../../bash/functions/die
+
 # Help message
 if [[ "$1" == "-h" || "$1" == "--help" ]]
 then
@@ -16,10 +19,20 @@ fi
 [[ -z "$DISTDIR" ]] && DISTDIR=/usr/portage/distfiles
 
 # Check that the directory exists
-[[ ! -d "$DISTDIR" ]] && { echo "Error: $DISTDIR does not exist" ; exit 1 ; }
+[[ ! -d "$DISTDIR" ]] && die "directory $DISTDIR does not exist"
+
+# Get the size of the directory contents (except dotfiles)
+SIZE=$(du -sch "$DISTDIR"/* 2> /dev/null)
+STATUS=$?
+SIZE=$(echo "$SIZE" | tail -n 1 | cut -f1)
+if [[ $STATUS != 0 ]]
+then
+    [[ $SIZE == 0 ]] && die -i -r0 "Directory $DISTDIR is empty."
+    die "failed to stat contents of $DISTDIR"
+fi
 
 # Confirm then delete everything (except dotfiles) in the distfiles directory
-echo -n "Purge $DISTDIR? (`du -sch "$DISTDIR"/* | tail -n 1 | cut -f1`) [y/N] "
+echo -n "Purge $DISTDIR? ($SIZE) [y/N] "
 declare -u ANS
 read ANS
 [[ "$ANS" == "Y" ]] && rm -Rf "$DISTDIR"/*
