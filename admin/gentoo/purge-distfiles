@@ -19,7 +19,7 @@ fi
 [[ ! -d "$DISTDIR" ]] && { echo "Error: $DISTDIR does not exist" ; exit 1 ; }
 
 # Confirm then delete everything (except dotfiles) in the distfiles directory
-echo -n "Purge $DISTDIR? [y/N] "
+echo -n "Purge $DISTDIR? (`du -sh . | cut -f1`) [y/N] "
 declare -u ANS
 read ANS
 [[ "$ANS" == "Y" ]] && rm -Rf "$DISTDIR"/*
