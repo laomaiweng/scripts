@@ -1,17 +1,50 @@
 #!/bin/bash
 # Check whether files that should be hardlinked indeed point to the same inode
 
+# Source useful functions
+source ${0%/*}/../bash/functions/die
+
 # Check the arguments
-if [[ $# != 1 || "$1" == "-h" || "$1" == "--help" ]]
+if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
 then
-    echo "  Usage: ${0##*/} <hardlinks file>
+    echo "  Usage: ${0##*/} [options] <hardlinks file>
 
 Check the consistency of hardlinks described in the file given as a parameter:
 all files must map to the same inode number.
 The hardlinks file should contain a series of lines, each line consisting of a
-list of files sharing the same inode."
+list of files sharing the same inode.
+When the --fix option is specified, all files on a line are hardlinked to the
+inode of the first file of the line.
+
+Available options:
+    -f|--fix    fix mismatched hardlinks (using the first file on each line)"
     exit
 fi
+
+# Process options
+OPTSDONE=""
+FIX=""
+while [[ -z "$OPTSDONE" ]]
+do
+    case "$1" in
+        -f|--fix)
+            FIX=true
+            ;;
+
+        --)
+            OPTSDONE=true
+            ;;
+
+        -*)
+            die "unknown option '$1'"
+            ;;
+
+        *)
+            break
+    esac
+    shift
+done
+[[ $# != 1 ]] && die "missing hardlinks file"
 
 # Read the hardlinks file line by line
 while read FILES
@@ -28,14 +61,22 @@ do
         fi
         # Get the file's inode
         IF=$(ls -i "$F" | cut -d" " -f1)
-        # Take the inode of the first file as a reference
+        # Take the path and inode of the first file as a reference
         if [[ $INODE == 0 ]]
         then
+            FILE=$F
             INODE=$IF
         # If inodes do not match, print an error
         elif [[ $INODE != $IF ]]
         then
-            echo "Mismatch: $FILES"
+            if [[ -z "$FIX" ]]
+            then
+                echo "Mismatch: $FILES"
+            else
+                rm "$F"
+                ln "$FILE" "$F"
+                echo "Fixed mismatch: $FILES"
+            fi
             break
         fi
     done
