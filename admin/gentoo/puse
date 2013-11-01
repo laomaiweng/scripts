@@ -2,14 +2,14 @@
 #############################################################################
 #   puse/pkey/plic                                                          #
 #                                                                           #
-# Script for management of Gentoo emerge flag files.                        #
+# Script for management of Gentoo Portage flag files.                       #
 # Respectful of file layout (category blocks, comments, blanks, ...).       #
 # Handles:                                                                  #
 #   * USE flags in package.use when called as 'puse'                        #
 #   * keywords in package.accept_keywords when called as 'pkey'             #
 #   * licenses in package.license when called as 'plic'                     #
 #                                                                           #
-# Atoms are parsed as per PMS EAPI 5 as DEPEND atoms.                       #
+# Atoms are parsed as per PMS EAPI 5, as DEPEND atoms.                      #
 #                                                                           #
 # History:                                                                  #
 #   v0.2    Diversification: handle keywords and licenses                   #
@@ -24,6 +24,8 @@
 #
 #############################################################################
 #############################################################################
+
+package require Tcl 8.6
 
 lappend auto_path [file normalize [file join [file dirname $::argv0] ../../tcl]]
 
@@ -65,15 +67,16 @@ set query ""
 # Boolean holding whether only queries were done (no set/unset/reset)
 set queryonly 1
 
-# DEPEND atom regexps
-# Differs from regular EAPI 5 atom regexps in that a single '*' is allowed at the end of the version string
-set constraint_rx {(?:<|<=|=|>=|>)}
-set category_rx {(?:[a-zA-Z0-9_][a-zA-Z0-9_+.-]*)}
-set package_rx {(?:[a-zA-Z0-9_][a-zA-Z0-9_+]*(?:-(?:[a-zA-Z0-9_+]*-)*[a-zA-Z_+]*)?)}
-set version_rx {(?:[0-9]+(?:\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?(?:-r[0-9]+)?\*?)}
-set use_rx {(?:[a-zA-Z0-9][a-zA-Z0-9@_+-]*)}
-set keyword_rx {(?:~?[a-zA-Z0-9_][a-zA-Z0-9_-]*)}
-set license_rx {(?:[[:graph:]]+)}
+# DEPEND atom regexps (see PMS EAPI 5 and ebuild(5) for specification)
+set constraint_rx   {(?:<|<=|=|>=|>|~)}
+set category_rx     {(?:[a-zA-Z0-9_][a-zA-Z0-9_+.-]*)}
+set package_rx      {(?:[a-zA-Z0-9_][a-zA-Z0-9_+]*(?:-(?:[a-zA-Z0-9_+]*-)*[a-zA-Z_+]*)?)}
+set version_rx      {(?:[0-9]+(?:\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?)}
+set revision_rx     {(?:r[0-9]+)}
+set postfix_rx      {(?:\*)}
+set use_rx          {(?:[a-zA-Z0-9][a-zA-Z0-9@_+-]*)}
+set keyword_rx      {(?:~?[a-zA-Z0-9_][a-zA-Z0-9_-]*)}
+set license_rx      {(?:[[:graph:]]+)}
 
 #############################################################################
 #############################################################################
@@ -236,6 +239,147 @@ proc SetupMode {m} {
 }
 
 #############################################################################
+# Break down an atom and return some parts of it.
+#
+# Available parts are:
+#   constraint      return the atom's constraint
+#   category        return the atom's category
+#   name            return the atom's name
+#   version         return the atom's version
+#   revision        return the atom's revision
+#   postfix         return the atom's postfix
+#   basecat         return the atom's base category
+#   subcat          return the atom's sub-category
+#   basename        return the atom's base name (category + name)
+#   package         return the atom's package name (base name + version)
+#   fullver         return the atom's full version (version + revision)
+#   fullpack        return the atom's full package name (package + revision)
+#   *               special value that returns all parts 
+#                   (same order as above; most useful with --dict)
+#
+# Available options:
+#   -d|--dict       return the parts as a dict instead of a list
+#
+# Arguments:
+#   options         options (see above; optional)
+#   parts           a list of parts to return (see above)
+#   atom            atom to break down
+#
+# Globals:
+#   constraint_rx   constraint regexp
+#   category_rx     category regexp
+#   package_rx      package regexp
+#   version_rx      version regexp
+#   revision_rx     revision regexp
+#   postfix_rx      postfix regexp
+#
+# Variables: NONE
+#
+# Return:
+#   the specified atom parts
+#############################################################################
+proc Atom {args} {
+    global constraint_rx
+    global category_rx
+    global package_rx
+    global version_rx
+    global revision_rx
+    global postfix_rx
+
+    # Define a function for appending to the return list
+    proc _atom_part_append {var key value} {
+        upvar $var list
+        lappend list $value
+    }
+
+    # Parse the arguments
+    set rargs {}
+    getopt flag arg $args {
+        -d - --dict {
+            # Return a dict instead of a list: redefine the _atom_part_append function
+            proc _atom_part_append {var key value} {
+                upvar $var dict
+                dict set dict $key $value
+            }
+        }
+        missing {
+            return -code error "option requires argument: $arg"
+        }
+        unknown {
+            return -code error "unknown or ambiguous option: $arg"
+        }
+        arglist {
+            set rargs $arg
+        }
+    }
+    # Get the parts and atom
+    lassign $rargs parts atom
+    # No parts and/or atom specified, bail out
+    if {![llength $parts] || $atom eq ""} {
+        return -code error "missing parts and/or atom"
+    }
+
+    # Split the atom
+    if {![regexp -- "^(${constraint_rx})?(((${category_rx})/(${package_rx}))(?:-((${version_rx})(?:-(${revision_rx}))?))?)(${postfix_rx})?\$" $atom -> constraint fullpack basename category name fullver version revision postfix]} {
+        # Atom does not match regexp, bail out
+        return -code error "invalid atom: $atom"
+    }
+
+    # Expand '*' in the list of parts into a list of all parts
+    if {$parts eq "*"} {
+        set parts {constraint category name version revision postfix basecat subcat basename package fullver fullpack}
+    }
+
+    # Build the return list/dict
+    set ret {}
+    foreach p $parts {
+        switch $p {
+            constraint -
+            category -
+            name -
+            version -
+            revision -
+            postfix -
+            basename -
+            fullver -
+            fullpack {
+                # Directly use the value extracted from the regexp
+                _atom_part_append ret $p [set $p]
+            }
+
+            basecat {
+                # Split the category around - and return the 1st part
+                _atom_part_append ret $p [lindex [split $category -] 0]
+            }
+
+            subcat {
+                # Split the category around - and return the 2nd part
+                _atom_part_append ret $p [lindex [split $category -] 1]
+            }
+
+            package {
+                # Strip the revision field from the end of the full package name
+                set offset 0
+                if {$revision ne ""} {
+                    # Remove as much chars as the length of the revision field + 1 for the preceding dash
+                    set offset [expr {[string length $revision]+1}]
+                }
+                _atom_part_append ret $p [string range $fullpack 0 end-$offset]
+            }
+
+            default {
+                # Unknown part, bail out
+                return -code error "unknown part: $p"
+            }
+        }
+    }
+
+    # Return the list/dict
+    return $ret
+}
+
+
+#############################################################################
 # Parse a flagspec and return the status and flag name.
 #
 # Arguments:
@@ -365,6 +509,8 @@ proc UpdateFlags {flags flagspecs} {
 #############################################################################
 # Parse an atom line.
 #
+# NB: This does not check the validity of the atom.
+#
 # Arguments:
 #   line            atom line to parse
 #   atomVar         name of the variable to hold the atom
@@ -385,18 +531,19 @@ proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar
     # Parse the package line, fill in the variables and return the result
     set success [regexp -- {^(([^#[:space:]]+)\s+)((?:[^#[:space:]]+\s*)*)(\#.*)?$} $line -> flagAlign atom flags comment]
     set flagAlign [string length $flagAlign]
-    set flags [list {*}$flags]
+    set flags [lassign $flags]
     set comAlign [string first # $line]
     return $success
 }
 
 #############################################################################
-# Pad a line with spaces up to a given target length.
-# If the line is already longer than the target length, append a single space.
+# Pad a line up to a given target length.
+# If the line is already longer than the target length, append a single character.
 #
 # Arguments:
 #   lineVar     variable name to pad
 #   length      length to pad up to
+#   char        padding character (optional; defaults to a space)
 #
 # Globals: NONE
 #
@@ -404,12 +551,12 @@ proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar
 #
 # Return: NONE
 #############################################################################
-proc PadLine {lineVar length} {
+proc PadLine {lineVar length {char " "}} {
     upvar 1 $lineVar line
     # Get the size of the line
     set size [string length $line]
     # Pad the line with spaces
-    set line "$line [string repeat " " [expr {$length-$size-1}]]"
+    set line "$line [string repeat $char [expr {$length-$size-1}]]"
 }
 
 
@@ -491,11 +638,10 @@ set flagspecs [lassign $args atom]
 if {$atom eq "" || ![llength $flagspecs]} {
     die "missing atom and/or ${flagdesc}s" 2
 }
-# Check the atom and extract the category
-if {![regexp -- "^${constraint_rx}?(${category_rx})/${package_rx}(?:-${version_rx})?\$" $atom -> category]} {
+# Check and parse the atom
+if {[catch {set atomdict [Atom --dict * $atom]}]} {
     die "atom seems invalid: $atom" 2
 }
-set category [lindex [split $category -] 0]
 
 # Read in the file
 if {[catch {open $path r} fd]} {
@@ -510,18 +656,24 @@ set iline [lsearch -all -regexp $file "^[reEscape $atom]\\s"]
 if {[llength $iline] > 1} {
     die "more than 1 line match this atom" 1
 } elseif {$iline eq ""} {
-    # Else if atom no found: add it
-    # Find and sort the atom's category block
-    set catblock [lsort -dictionary [lsearch -all -inline -regexp $file "^${constraint_rx}?[reEscape $category]-"]]
+    # Else if atom not found: add it
+    # Find the atom's category block
+    set catblock [lsearch -all -inline -regexp $file "^${constraint_rx}?[reEscape [dict get $atomdict basecat]]\[/-\]?"]
     if {$catblock ne ""} {
+        # Augment each line with its constraint-less atom, for sorting and searching
+        set catblock [lmap l $catblock {
+            list [join [Atom {fullpack postfix} [lindex $l 0]] {}] $l
+        }]
+        # Sort according to the constraint-less atom
+        set catblock [lsort -dictionary -index 0 $catblock]
         # Find the line that would be preceding the atom inside the block
-        set neighbor [lsearch -bisect -inline $catblock $atom]
+        set neighbor [lindex [lsearch -bisect -index 0 -inline $catblock [join [Atom {fullpack postfix} $atom] {}]] 1]
         if {$neighbor ne ""} {
             # Get the index for the next line in the file
             set insert [expr [lsearch -exact $file $neighbor]+1]
         } else {
             # Doesn't exist: atom would be the first of the block, take the current first line
-            set neighbor [lindex $catblock 0]
+            set neighbor [lindex $catblock 0 1]
             # Get the index for this line in the file
             set insert [lsearch -exact $file $neighbor]
         }
@@ -531,10 +683,16 @@ if {[llength $iline] > 1} {
         }
     } else {
         # No category block, must create one
-        # Strip the file of comments and empty lines, then sort it
-        set blocks [lsort -dictionary [lsearch -all -inline -not -regexp $file {^\s*(?:#.*)?$}]]
+        # Strip the file of comments and empty lines
+        set blocks [lsearch -all -inline -not -regexp $file {^\s*(?:#.*)?$}]
+        # Augment each line with its base category, for sorting and searching
+        set blocks [lmap l $blocks {
+            list [Atom basecat [lindex $l 0]] $l
+        }]
+        # Sort according to the base category
+        set blocks [lsort -dictionary -index 0 $blocks]
         # Find the last line of the preceding category block
-        set neighbor [lsearch -bisect -inline $blocks $category]
+        set neighbor [lindex [lsearch -bisect -index 0 -inline $blocks [dict get $atomdict basecat]] 1]
         if {$neighbor ne ""} {
             # Get the index for this line in the file
             set insert [lsearch -exact $file $neighbor]
@@ -545,7 +703,7 @@ if {[llength $iline] > 1} {
             }
         } else {
             # Doesn't exist: block would be the first of the file, take the first line of the current first block
-            set neighbor [lindex $blocks 0]
+            set neighbor [lindex $blocks 0 1]
             # Get the index for this line in the file
             set insert [lsearch -exact $file $neighbor]
             # Find the opening empty line for the block
