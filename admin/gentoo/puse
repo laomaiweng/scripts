@@ -254,7 +254,7 @@ proc SetupMode {m} {
 #   package         return the atom's package name (base name + version)
 #   fullver         return the atom's full version (version + revision)
 #   fullpack        return the atom's full package name (package + revision)
-#   *               special value that returns all parts 
+#   *               special value that returns all parts
 #                   (same order as above; most useful with --dict)
 #
 # Available options:
@@ -657,78 +657,82 @@ if {[llength $iline] > 1} {
     die "more than 1 line match this atom" 1
 } elseif {$iline eq ""} {
     # Else if atom not found: add it
-    # Find the atom's category block
-    set catblock [lsearch -all -inline -regexp $file "^${constraint_rx}?[reEscape [dict get $atomdict basecat]]\[/-\]?"]
-    if {$catblock ne ""} {
-        # Augment each line with its constraint-less atom, for sorting and searching
-        set catblock [lmap l $catblock {
-            list [join [Atom {fullpack postfix} [lindex $l 0]] {}] $l
-        }]
-        # Sort according to the constraint-less atom
-        set catblock [lsort -dictionary -index 0 $catblock]
-        # Find the line that would be preceding the atom inside the block
-        set neighbor [lindex [lsearch -bisect -index 0 -inline $catblock [join [Atom {fullpack postfix} $atom] {}]] 1]
-        if {$neighbor ne ""} {
-            # Get the index for the next line in the file
-            set insert [expr [lsearch -exact $file $neighbor]+1]
-        } else {
-            # Doesn't exist: atom would be the first of the block, take the current first line
-            set neighbor [lindex $catblock 0 1]
-            # Get the index for this line in the file
-            set insert [lsearch -exact $file $neighbor]
-        }
-        # Extract the alignment of this block using the neighbor line
-        if {![ParsePackageLine $neighbor - flagAlign - - comAlign]} {
-            die "unable to determine category alignment" 1
-        }
-    } else {
-        # No category block, must create one
-        # Strip the file of comments and empty lines
-        set blocks [lsearch -all -inline -not -regexp $file {^\s*(?:#.*)?$}]
-        # Augment each line with its base category, for sorting and searching
-        set blocks [lmap l $blocks {
-            list [Atom basecat [lindex $l 0]] $l
-        }]
-        # Sort according to the base category
-        set blocks [lsort -dictionary -index 0 $blocks]
-        # Find the last line of the preceding category block
-        set neighbor [lindex [lsearch -bisect -index 0 -inline $blocks [dict get $atomdict basecat]] 1]
-        if {$neighbor ne ""} {
-            # Get the index for this line in the file
-            set insert [lsearch -exact $file $neighbor]
-            # Find the ending empty line for the block
-            while {![string is space $neighbor]} {
-                incr insert
-                set neighbor [lindex $file $insert]
-            }
-        } else {
-            # Doesn't exist: block would be the first of the file, take the first line of the current first block
-            set neighbor [lindex $blocks 0 1]
-            # Get the index for this line in the file
-            set insert [lsearch -exact $file $neighbor]
-            # Find the opening empty line for the block
-            while {![string is space $neighbor]} {
-                incr insert -1
-                set neighbor [lindex $file $insert]
-            }
-        }
-
-        # Compute flags alignment as a multiple of 4
-        set flagAlign [string length $atom]
-        set flagAlign [expr {$flagAlign+4-($flagAlign%4)}]
-        # Insert an empty line before creating the block
-        set file [linsert $file $insert ""]
-        incr insert
-    }
-
-    # Build the new line
+    # Prepare the flags
     set flags [UpdateFlags {} $flagspecs]
-    set nline $atom
-    PadLine nline $flagAlign
-    set nline "$nline[join $flags]"
+    # Check that there are flags to write indeed
+    if {[llength $flags]} {
+        # Find the atom's category block
+        set catblock [lsearch -all -inline -regexp $file "^${constraint_rx}?[reEscape [dict get $atomdict basecat]]\[/-\]?"]
+        if {$catblock ne ""} {
+            # Augment each line with its constraint-less atom, for sorting and searching
+            set catblock [lmap l $catblock {
+                list [join [Atom {fullpack postfix} [lindex $l 0]] {}] $l
+            }]
+            # Sort according to the constraint-less atom
+            set catblock [lsort -dictionary -index 0 $catblock]
+            # Find the line that would be preceding the atom inside the block
+            set neighbor [lindex [lsearch -bisect -index 0 -inline $catblock [join [Atom {fullpack postfix} $atom] {}]] 1]
+            if {$neighbor ne ""} {
+                # Get the index for the next line in the file
+                set insert [expr [lsearch -exact $file $neighbor]+1]
+            } else {
+                # Doesn't exist: atom would be the first of the block, take the current first line
+                set neighbor [lindex $catblock 0 1]
+                # Get the index for this line in the file
+                set insert [lsearch -exact $file $neighbor]
+            }
+            # Extract the alignment of this block using the neighbor line
+            if {![ParsePackageLine $neighbor - flagAlign - - comAlign]} {
+                die "unable to determine category alignment" 1
+            }
+        } else {
+            # No category block, must create one
+            # Strip the file of comments and empty lines
+            set blocks [lsearch -all -inline -not -regexp $file {^\s*(?:#.*)?$}]
+            # Augment each line with its base category, for sorting and searching
+            set blocks [lmap l $blocks {
+                list [Atom basecat [lindex $l 0]] $l
+            }]
+            # Sort according to the base category
+            set blocks [lsort -dictionary -index 0 $blocks]
+            # Find the last line of the preceding category block
+            set neighbor [lindex [lsearch -bisect -index 0 -inline $blocks [dict get $atomdict basecat]] 1]
+            if {$neighbor ne ""} {
+                # Get the index for this line in the file
+                set insert [lsearch -exact $file $neighbor]
+                # Find the ending empty line for the block
+                while {![string is space $neighbor]} {
+                    incr insert
+                    set neighbor [lindex $file $insert]
+                }
+            } else {
+                # Doesn't exist: block would be the first of the file, take the first line of the current first block
+                set neighbor [lindex $blocks 0 1]
+                # Get the index for this line in the file
+                set insert [lsearch -exact $file $neighbor]
+                # Find the opening empty line for the block
+                while {![string is space $neighbor]} {
+                    incr insert -1
+                    set neighbor [lindex $file $insert]
+                }
+            }
 
-    # Insert it in the file
-    set file [linsert $file $insert $nline]
+            # Compute flags alignment as a multiple of 4
+            set flagAlign [string length $atom]
+            set flagAlign [expr {$flagAlign+4-($flagAlign%4)}]
+            # Insert an empty line before creating the block
+            set file [linsert $file $insert ""]
+            incr insert
+        }
+
+        # Build the new line
+        set nline $atom
+        PadLine nline $flagAlign
+        set nline "$nline[join $flags]"
+
+        # Insert it in the file
+        set file [linsert $file $insert $nline]
+    }
 } else {
     # Else if atom found: update it
     # Get the current line
@@ -760,6 +764,17 @@ if {[llength $iline] > 1} {
     } else {
         # Empty flags, remove the line
         lremove file $iline
+
+        # Find the atom's category block
+        set catblock [lsearch -all -inline -regexp $file "^${constraint_rx}?[reEscape [dict get $atomdict basecat]]\[/-\]?"]
+        # If the block is now empty, remove one of its surrounding blank lines
+        if {$catblock eq ""} {
+            # Only remove a line if both surrounding lines are indeed blank
+            if {[string is space [lindex $file $iline]] &&
+                [string is space [lindex $file [expr {$iline-1}]]]} {
+                lremove file $iline
+            }
+        }
     }
 }
 
