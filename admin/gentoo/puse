@@ -51,8 +51,13 @@ set mode ""
 set flagdesc ""
 # Flagspec status regexp
 set flagstatusrx {[?%+-]}
-# Flagspec regexp capturing status (+-?%) and flag (set by [SetupMode])
+# Flagspec regexp capturing status (+-%?) and flag (set by [SetupMode])
 set flagrx ""
+
+# Comment for the line
+set comment ""
+# Boolean holding whether a comment has been passed with --comment
+set commentset false
 
 # Path to file (set by [SetupMode])
 set path ""
@@ -65,7 +70,7 @@ set flags ""
 # Flag query results
 set query ""
 # Boolean holding whether only queries were done (no set/unset/reset)
-set queryonly 1
+set queryonly true
 
 # DEPEND atom regexps (see PMS EAPI 5 and ebuild(5) for specification)
 set constraint_rx   {(?:<|<=|=|>=|>|~)}
@@ -77,6 +82,7 @@ set postfix_rx      {(?:\*)}
 set use_rx          {(?:[a-zA-Z0-9][a-zA-Z0-9@_+-]*)}
 set keyword_rx      {(?:~?[a-zA-Z0-9_][a-zA-Z0-9_-]*)}
 set license_rx      {(?:[[:graph:]]+)}
+
 
 #############################################################################
 #############################################################################
@@ -378,7 +384,6 @@ proc Atom {args} {
     return $ret
 }
 
-
 #############################################################################
 # Parse a flagspec and return the status and flag name.
 #
@@ -467,7 +472,7 @@ proc UpdateFlags {flags flagspecs} {
                 # Append the flagspec
                 lappend flags $flag
                 # By the way, now we're not just querying
-                set queryonly 0
+                set queryonly false
             }
 
             - {
@@ -477,7 +482,7 @@ proc UpdateFlags {flags flagspecs} {
                 # Append the flagspec
                 lappend flags -$flag
                 # By the way, now we're not just querying
-                set queryonly 0
+                set queryonly false
             }
 
             % {
@@ -485,7 +490,7 @@ proc UpdateFlags {flags flagspecs} {
                 # Remove all occurences of the flag
                 lremove flags $iflag
                 # By the way, now we're not just querying
-                set queryonly 0
+                set queryonly false
             }
 
             ? {
@@ -517,7 +522,8 @@ proc UpdateFlags {flags flagspecs} {
 #   flagAlignVar    name of the variable to hold the column index for flags
 #   flagsVar        name of the variable to hold the flags
 #   commentVar      name of the variable to hold the line's ending comment
-#   comAlignVar     name of the variable to hold the column index for the comment
+#   comAlignVar     name of the variable to hold the column index for the
+#                   comment
 #
 # Globals: NONE
 #
@@ -529,7 +535,7 @@ proc UpdateFlags {flags flagspecs} {
 proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar} {
     upvar 1 $atomVar atom $flagAlignVar flagAlign $flagsVar flags $commentVar comment $comAlignVar comAlign
     # Parse the package line, fill in the variables and return the result
-    set success [regexp -- {^(([^#[:space:]]+)\s+)((?:[^#[:space:]]+\s*)*)(\#.*)?$} $line -> flagAlign atom flags comment]
+    set success [regexp -- {^(([^#[:space:]]+)\s+)((?:[^#[:space:]]+\s*)*)(?:\# ?(.*))?$} $line -> flagAlign atom flags comment]
     set flagAlign [string length $flagAlign]
     set flags [lassign $flags]
     set comAlign [string first # $line]
@@ -537,26 +543,28 @@ proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar
 }
 
 #############################################################################
-# Pad a line up to a given target length.
-# If the line is already longer than the target length, append a single character.
+# Pad a string up to a given target length.
+# A minimum number of characters can be appended regardless of the current
+# string length.
 #
 # Arguments:
-#   lineVar     variable name to pad
+#   string      string value to pad
 #   length      length to pad up to
 #   char        padding character (optional; defaults to a space)
+#   atleast     minimum length of padding (optional; defaults to 1)
 #
 # Globals: NONE
 #
 # Variables: NONE
 #
-# Return: NONE
+# Return:
+#   padded string
 #############################################################################
-proc PadLine {lineVar length {char " "}} {
-    upvar 1 $lineVar line
-    # Get the size of the line
-    set size [string length $line]
-    # Pad the line with spaces
-    set line "$line [string repeat $char [expr {$length-$size-1}]]"
+proc PadString {string length {char " "} {atleast 1}} {
+    # Pad the string with the given character
+    append string [string repeat $char $atleast] [string repeat $char [expr {$length-[string length $string]-$atleast}]]
+    # Return the padded string
+    return $string
 }
 
 
@@ -588,6 +596,11 @@ getopt flag arg $argv {
         # Define a custom path
         set path $arg
     }
+    -c: - --comment: {
+        # Define the line's new comment
+        set comment $arg
+        set commentset true
+    }
     -v - --verbose {
         # Increase the verbosity level
         incr verbose
@@ -599,11 +612,14 @@ getopt flag arg $argv {
 Add or remove package-specific ${flagdesc}s.
 
 Options:
-  -m | --mode <mode>    operating mode ('use', 'key' or 'lic')
-  -f | --file <file>    use <file> instead of the default $path
-  -v | --verbose        print the resulting ${flagdesc}s
-  -h | --help           print the help
-  -V | --version        print the script version
+  -m | --mode <mode>            operating mode ('use', 'key' or 'lic')
+  -f | --file <file>            use <file> instead of the default $path
+  -c | --comment <comment>      add <comment> at the end of the line;
+                                {} in <comment> gets replaced with the
+                                line's previous comment, if any
+  -v | --verbose                print the resulting ${flagdesc}s
+  -h | --help                   print the help
+  -V | --version                print the script version
 
 ${flagdesc}s can take the following form:
   +$mode | $mode            set the $flagdesc
@@ -612,7 +628,6 @@ ${flagdesc}s can take the following form:
   ?$mode                  query the $flagdesc
 "
         # TODO: --pretend   don't do any changes ; with --verbose, print what would be done
-        # TODO: --comment   add comment at end of line
         # TODO: --sort      just sort the file
         # TODO: multiple --verbose switches increase the level of verbosity
         exit 0
@@ -720,15 +735,21 @@ if {[llength $iline] > 1} {
             # Compute flags alignment as a multiple of 4
             set flagAlign [string length $atom]
             set flagAlign [expr {$flagAlign+4-($flagAlign%4)}]
+            # Compute comments alignment as a multiple of 4
+            set comAlign [expr {$flagAlign+[string length [join $flags]]}]
+            set comAlign [expr {$comAlign+4-($comAlign%4)}]
             # Insert an empty line before creating the block
             set file [linsert $file $insert ""]
             incr insert
         }
 
         # Build the new line
-        set nline $atom
-        PadLine nline $flagAlign
-        set nline "$nline[join $flags]"
+        set nline [PadString $atom $flagAlign][join $flags]
+        # Append the comment, if any
+        if {$commentset && $comment ne ""} {
+            set nline [PadString $nline $comAlign]
+            append nline "# " $comment
+        }
 
         # Insert it in the file
         set file [linsert $file $insert $nline]
@@ -738,7 +759,7 @@ if {[llength $iline] > 1} {
     # Get the current line
     set line [lindex $file $iline]
     # Parse the line
-    if {![ParsePackageLine $line - flagAlign flags comment comAlign]} {
+    if {![ParsePackageLine $line - flagAlign flags oldcomment comAlign]} {
         die "unable to parse current ${flagdesc}s for this atom" 1
     }
 
@@ -747,16 +768,22 @@ if {[llength $iline] > 1} {
     # Check whether any flags remain
     if {[llength $flags]} {
         # Rebuild the line
-        set nline $atom
-        PadLine nline $flagAlign
-        set nline "$nline[join $flags]"
+        set nline [PadString $atom $flagAlign][join $flags]
 
         # Process the comment
+        if {$commentset} {
+            # Insert the old comment in the new comment
+            set comment [string map [list "{}" $oldcomment] $comment]
+        } else {
+            # Use the old comment
+            set comment $oldcomment
+        }
+        # Add the comment
         if {$comment ne ""} {
             # Pad the line
-            PadLine nline $comAlign
+            set nline [PadString $nline $comAlign]
             # Append the comment
-            set nline "$nline$comment"
+            append nline "# " $comment
         }
 
         # Put the new line back in the file
