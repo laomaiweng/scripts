@@ -543,6 +543,42 @@ proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar
 }
 
 #############################################################################
+# Choose an alignment value from a list of candidates. If no candidate is
+# available or if none is fitting, compute an alignment as a multiple of n.
+#
+# Arguments:
+#   base            base length after which to align
+#   candidates      list of alignment candidates
+#   stride          alignment stride (default: 4)
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   alignment value (chosen from candidates or computed)
+#############################################################################
+proc ChooseAlignment {base candidates {stride 4}} {
+    set align ""
+
+    # Choose an alignment value amongst the candidates
+    if {[llength $candidates]} {
+        # Sort the candidates
+        set candidates [lsort -integer -increasing -unique $candidates]
+        # Look for the lowest fitting candidate
+        set index [lsearch -integer -bisect $candidates [expr {$base+1}]]
+        set align [lindex $candidates [expr {$index+1}]]
+    }
+
+    # No alignment selected, compute one as a multiple of the stride
+    if {$align eq ""} {
+        set align [expr {$base + $stride - ($base % $stride)}]
+    }
+
+    return $align
+}
+
+#############################################################################
 # Pad a string up to a given target length.
 # A minimum number of characters can be appended regardless of the current
 # string length.
@@ -550,8 +586,8 @@ proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar
 # Arguments:
 #   string      string value to pad
 #   length      length to pad up to
-#   char        padding character (optional; defaults to a space)
-#   atleast     minimum length of padding (optional; defaults to 1)
+#   char        padding character (default: " ")
+#   atleast     minimum length of padding (default: 1)
 #
 # Globals: NONE
 #
@@ -613,7 +649,8 @@ Add or remove package-specific ${flagdesc}s.
 
 Options:
   -m | --mode <mode>            operating mode ('use', 'key' or 'lic')
-  -f | --file <file>            use <file> instead of the default $path
+  -f | --file <file>            use <file> instead of the default
+                                $path
   -c | --comment <comment>      add <comment> at the end of the line;
                                 {} in <comment> gets replaced with the
                                 line's previous comment, if any
@@ -622,10 +659,10 @@ Options:
   -V | --version                print the script version
 
 ${flagdesc}s can take the following form:
-  +$mode | $mode            set the $flagdesc
-  -$mode                  unset the $flagdesc
-  %$mode                  reset the $flagdesc (remove it from the file)
-  ?$mode                  query the $flagdesc
+  [PadString "+$mode | $mode" 22]set the $flagdesc
+  [PadString "-$mode" 22]unset the $flagdesc
+  [PadString "%$mode" 22]reset the $flagdesc (remove it from the file)
+  [PadString "?$mode" 22]query the $flagdesc
 "
         # TODO: --pretend   don't do any changes ; with --verbose, print what would be done
         # TODO: --sort      just sort the file
@@ -667,6 +704,27 @@ close $fd
 
 # Search for the atom
 set iline [lsearch -all -regexp $file "^[reEscape $atom]\\s"]
+# Search for the atom's category block
+set block [lsearch -all -inline -regexp $file "^${constraint_rx}?[reEscape [dict get $atomdict basecat]]\[/-\]?"]
+# Extract the alignments used in this block
+set blockFlagAlign {}
+set blockComAlign {}
+foreach l $block {
+    # Parse each block line
+    if {![ParsePackageLine $l - fa - - ca]} {
+        puts stderr "Warning: malformed package line:"
+        puts stderr "         $l"
+    } else {
+        # Extract the flags/comments alignments
+        if {$fa >= 0} {
+            lappend blockFlagAlign $fa
+        }
+        if {$ca >= 0} {
+            lappend blockComAlign $ca
+        }
+    }
+}
+
 # Sanity check: only 1 atom in the file
 if {[llength $iline] > 1} {
     die "more than 1 line match this atom" 1
@@ -676,42 +734,37 @@ if {[llength $iline] > 1} {
     set flags [UpdateFlags {} $flagspecs]
     # Check that there are flags to write indeed
     if {[llength $flags]} {
-        # Find the atom's category block
-        set catblock [lsearch -all -inline -regexp $file "^${constraint_rx}?[reEscape [dict get $atomdict basecat]]\[/-\]?"]
-        if {$catblock ne ""} {
+        # Insert the atom in its existing category block, if any
+        if {$block ne ""} {
             # Augment each line with its constraint-less atom, for sorting and searching
-            set catblock [lmap l $catblock {
+            set block [lmap l $block {
                 list [join [Atom {fullpack postfix} [lindex $l 0]] {}] $l
             }]
             # Sort according to the constraint-less atom
-            set catblock [lsort -dictionary -index 0 $catblock]
+            set block [lsort -dictionary -index 0 $block]
             # Find the line that would be preceding the atom inside the block
-            set neighbor [lindex [lsearch -bisect -index 0 -inline $catblock [join [Atom {fullpack postfix} $atom] {}]] 1]
+            set neighbor [lindex [lsearch -bisect -index 0 -inline $block [join [Atom {fullpack postfix} $atom] {}]] 1]
             if {$neighbor ne ""} {
                 # Get the index for the next line in the file
                 set insert [expr [lsearch -exact $file $neighbor]+1]
             } else {
                 # Doesn't exist: atom would be the first of the block, take the current first line
-                set neighbor [lindex $catblock 0 1]
+                set neighbor [lindex $block 0 1]
                 # Get the index for this line in the file
                 set insert [lsearch -exact $file $neighbor]
-            }
-            # Extract the alignment of this block using the neighbor line
-            if {![ParsePackageLine $neighbor - flagAlign - - comAlign]} {
-                die "unable to determine category alignment" 1
             }
         } else {
             # No category block, must create one
             # Strip the file of comments and empty lines
-            set blocks [lsearch -all -inline -not -regexp $file {^\s*(?:#.*)?$}]
+            set allblocks [lsearch -all -inline -not -regexp $file {^\s*(?:#.*)?$}]
             # Augment each line with its base category, for sorting and searching
-            set blocks [lmap l $blocks {
+            set allblocks [lmap l $allblocks {
                 list [Atom basecat [lindex $l 0]] $l
             }]
             # Sort according to the base category
-            set blocks [lsort -dictionary -index 0 $blocks]
+            set allblocks [lsort -dictionary -index 0 $allblocks]
             # Find the last line of the preceding category block
-            set neighbor [lindex [lsearch -bisect -index 0 -inline $blocks [dict get $atomdict basecat]] 1]
+            set neighbor [lindex [lsearch -bisect -index 0 -inline $allblocks [dict get $atomdict basecat]] 1]
             if {$neighbor ne ""} {
                 # Get the index for this line in the file
                 set insert [lsearch -exact $file $neighbor]
@@ -722,7 +775,7 @@ if {[llength $iline] > 1} {
                 }
             } else {
                 # Doesn't exist: block would be the first of the file, take the first line of the current first block
-                set neighbor [lindex $blocks 0 1]
+                set neighbor [lindex $allblocks 0 1]
                 # Get the index for this line in the file
                 set insert [lsearch -exact $file $neighbor]
                 # Find the opening empty line for the block
@@ -732,23 +785,21 @@ if {[llength $iline] > 1} {
                 }
             }
 
-            # Compute flags alignment as a multiple of 4
-            set flagAlign [string length $atom]
-            set flagAlign [expr {$flagAlign+4-($flagAlign%4)}]
-            # Compute comments alignment as a multiple of 4
-            set comAlign [expr {$flagAlign+[string length [join $flags]]}]
-            set comAlign [expr {$comAlign+4-($comAlign%4)}]
             # Insert an empty line before creating the block
             set file [linsert $file $insert ""]
             incr insert
         }
 
+        # Choose/compute flags alignment
+        set flagAlign [ChooseAlignment [string length $atom] $blockFlagAlign]
+        # Choose/compute comments alignment
+        set comAlign [ChooseAlignment [expr {$flagAlign+[string length [join $flags]]}] $blockComAlign]
+
         # Build the new line
         set nline [PadString $atom $flagAlign][join $flags]
         # Append the comment, if any
         if {$commentset && $comment ne ""} {
-            set nline [PadString $nline $comAlign]
-            append nline "# " $comment
+            set nline "[PadString $nline $comAlign]# $comment"
         }
 
         # Insert it in the file
@@ -780,10 +831,12 @@ if {[llength $iline] > 1} {
         }
         # Add the comment
         if {$comment ne ""} {
-            # Pad the line
-            set nline [PadString $nline $comAlign]
+            # Choose/compute the alignment if necessary
+            if {$comAlign eq -1} {
+                set comAlign [ChooseAlignment [string length $nline] $blockComAlign]
+            }
             # Append the comment
-            append nline "# " $comment
+            set nline "[PadString $nline $comAlign]# $comment"
         }
 
         # Put the new line back in the file
@@ -792,10 +845,9 @@ if {[llength $iline] > 1} {
         # Empty flags, remove the line
         lremove file $iline
 
-        # Find the atom's category block
-        set catblock [lsearch -all -inline -regexp $file "^${constraint_rx}?[reEscape [dict get $atomdict basecat]]\[/-\]?"]
-        # If the block is now empty, remove one of its surrounding blank lines
-        if {$catblock eq ""} {
+        # If the atom was alone in its category block, the block is now gone:
+        # remove one of its surrounding blank lines
+        if {[llength $block] eq 1} {
             # Only remove a line if both surrounding lines are indeed blank
             if {[string is space [lindex $file $iline]] &&
                 [string is space [lindex $file [expr {$iline-1}]]]} {
