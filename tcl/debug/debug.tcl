@@ -10,8 +10,8 @@
 package provide debug 1.0
 
 
-# Define the Debug namespace
-namespace eval Debug {
+# Define the debug namespace
+namespace eval debug {
     variable debug 1
 }
 
@@ -37,7 +37,7 @@ namespace eval Debug {
 # Return:
 #   puts return value
 #############################################################################
-proc Debug::puts {args} {
+proc ::debug::puts {args} {
     return [::puts {*}$args]
 }
 
@@ -56,7 +56,7 @@ proc Debug::puts {args} {
 # Return:
 #   string containing the current stacktrace
 #############################################################################
-proc Debug::stacktrace {} {
+proc ::debug::stacktrace {} {
     set stack "Stack trace:\n"
     for {set i 1} {$i < [info level]} {incr i} {
         set lvl [info level -$i]
@@ -85,7 +85,7 @@ proc Debug::stacktrace {} {
 # Nop all debug procedures if the TCL_DEBUG environment variable is not set
 if {![info exists ::env(TCL_DEBUG)]} {
     # Nop all debug procs
-    foreach proc [info procs ::Debug::*] {
+    foreach proc [info procs ::debug::*] {
         proc $proc args {}
     }
     # Set debug flag to false
