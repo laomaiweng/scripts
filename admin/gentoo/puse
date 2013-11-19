@@ -30,7 +30,10 @@ package require Tcl 8.6
 lappend auto_path [file normalize [file join [file dirname $::argv0] ../../tcl]]
 
 package require debug
+package require qutils
 package require getopt
+
+namespace import ::qutils::die ::qutils::lremove ::qutils::reEscape
 
 
 #############################################################################
@@ -91,91 +94,6 @@ set license_rx      {(?:[[:graph:]]+)}
 #
 #############################################################################
 #############################################################################
-
-#############################################################################
-# Get the script name.
-#
-# Arguments: NONE
-#
-# Globals: NONE
-#
-# Variables: NONE
-#
-# Return:
-#   script basename (no leading path, no trailing .tcl)
-#############################################################################
-proc scriptName {} {
-    # Strip the path
-    set base [file tail $::argv0]
-    # Strip any trailing .tcl extension
-    if {[file extension $base] eq ".tcl"} {
-        set base [file rootname $base]
-    }
-    # Return the resulting basename
-    return $base
-}
-
-#############################################################################
-# Print an error message and bail out.
-#
-# Arguments:
-#   message     error message
-#   code        return code (default: 1)
-#   prefix      optional prefix to the error message (default: "Error: ")
-#
-# Globals: NONE
-#
-# Variables: NONE
-#
-# Return: NONE
-#############################################################################
-proc die {message {code 1} {prefix "Error: "}} {
-    # Print the message
-    puts stderr ${prefix}${message}
-    # Exit with the given return code
-    exit $code
-}
-
-#############################################################################
-# Escape a string for use in a regexp pattern.
-#
-# Arguments:
-#   str     string to escape
-#
-# Globals: NONE
-#
-# Variables: NONE
-#
-# Return:
-#   escaped string that can safely be used as a fixed string in a regexp
-#############################################################################
-proc reEscape {str} {
-    regsub -all {\W} $str {\\&}
-}
-
-#############################################################################
-# Remove indices from a list.
-#
-# Arguments:
-#   listVar     list variable to strip indices from
-#   indices     indices to strip from the list
-#
-# Globals: NONE
-#
-# Variables: NONE
-#
-# Return: NONE
-#############################################################################
-proc lremove {listVar indices} {
-    upvar 1 $listVar list
-    # Sort the indices in decreasing order (so that indices get removed from
-    # the end of the list first and don't impact removal of other indices)
-    set indices [lsort -integer -decreasing $indices]
-    # Remove each index
-    foreach i $indices {
-        set list [lreplace $list $i $i]
-    }
-}
 
 #############################################################################
 # Setup the script variables according to the given operating mode.
@@ -578,31 +496,6 @@ proc ChooseAlignment {base candidates {stride 4}} {
     return $align
 }
 
-#############################################################################
-# Pad a string up to a given target length.
-# A minimum number of characters can be appended regardless of the current
-# string length.
-#
-# Arguments:
-#   string      string value to pad
-#   length      length to pad up to
-#   char        padding character (default: " ")
-#   atleast     minimum length of padding (default: 1)
-#
-# Globals: NONE
-#
-# Variables: NONE
-#
-# Return:
-#   padded string
-#############################################################################
-proc PadString {string length {char " "} {atleast 1}} {
-    # Pad the string with the given character
-    append string [string repeat $char $atleast] [string repeat $char [expr {$length-[string length $string]-$atleast}]]
-    # Return the padded string
-    return $string
-}
-
 
 #############################################################################
 #############################################################################
@@ -613,7 +506,7 @@ proc PadString {string length {char " "} {atleast 1}} {
 #############################################################################
 
 # Detect the operating mode based on the script name
-if {[SetupMode [string tolower [string range [scriptName] 1 end]]]} {
+if {[SetupMode [string tolower [string range [::qutils::scriptName] 1 end]]]} {
     # Invalid mode: warn the user
     puts stderr "Warning: cannot determine operating mode from script name, defaulting to 'use'"
 }
@@ -643,7 +536,7 @@ getopt flag arg $argv {
     }
     -h? - --help {
         # Print the help
-        puts "  Usage: [scriptName] \[options\] <atom> <$flagdesc>
+        puts "  Usage: [::qutils::scriptName] \[options\] <atom> <$flagdesc>
 
 Add or remove package-specific ${flagdesc}s.
 
@@ -659,10 +552,10 @@ Options:
   -V | --version                print the script version
 
 ${flagdesc}s can take the following form:
-  [PadString "+$mode | $mode" 22]set the $flagdesc
-  [PadString "-$mode" 22]unset the $flagdesc
-  [PadString "%$mode" 22]reset the $flagdesc (remove it from the file)
-  [PadString "?$mode" 22]query the $flagdesc
+  [string pad "+$mode | $mode" 22]set the $flagdesc
+  [string pad "-$mode" 22]unset the $flagdesc
+  [string pad "%$mode" 22]reset the $flagdesc (remove it from the file)
+  [string pad "?$mode" 22]query the $flagdesc
 "
         # TODO: --pretend   don't do any changes ; with --verbose, print what would be done
         # TODO: --sort      just sort the file
@@ -671,7 +564,7 @@ ${flagdesc}s can take the following form:
     }
     -V - --version {
         # Report the version of the program
-        puts "[scriptName] version $version"
+        puts "[::qutils::scriptName] version $version"
         exit 0
     }
     missing {
@@ -796,10 +689,10 @@ if {[llength $iline] > 1} {
         set comAlign [ChooseAlignment [expr {$flagAlign+[string length [join $flags]]}] $blockComAlign]
 
         # Build the new line
-        set nline [PadString $atom $flagAlign][join $flags]
+        set nline [string pad $atom $flagAlign][join $flags]
         # Append the comment, if any
         if {$commentset && $comment ne ""} {
-            set nline "[PadString $nline $comAlign]# $comment"
+            set nline "[string pad $nline $comAlign]# $comment"
         }
 
         # Insert it in the file
@@ -819,7 +712,7 @@ if {[llength $iline] > 1} {
     # Check whether any flags remain
     if {[llength $flags]} {
         # Rebuild the line
-        set nline [PadString $atom $flagAlign][join $flags]
+        set nline [string pad $atom $flagAlign][join $flags]
 
         # Process the comment
         if {$commentset} {
@@ -836,7 +729,7 @@ if {[llength $iline] > 1} {
                 set comAlign [ChooseAlignment [string length $nline] $blockComAlign]
             }
             # Append the comment
-            set nline "[PadString $nline $comAlign]# $comment"
+            set nline "[string pad $nline $comAlign]# $comment"
         }
 
         # Put the new line back in the file
