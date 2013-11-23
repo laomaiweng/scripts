@@ -298,6 +298,9 @@ proc Atom {args} {
         }
     }
 
+    # Remove the append proc
+    rename _atom_part_append {}
+
     # Return the list/dict
     return $ret
 }
@@ -371,6 +374,16 @@ proc UpdateFlags {flags flagspecs} {
 
     # Process each flagspec
     foreach spec $flagspecs {
+        # Process the special %% flagspec
+        if {$spec eq "%%"} {
+            # Reset all flags
+            set flags {}
+            # By the way, now we're not just querying
+            set queryonly false
+            # Carry on
+            continue
+        }
+
         # Parse the flagspec
         if {![ParseFlagspec $spec action flag]} {
             die "wrong format for flag: $spec" 2
@@ -552,10 +565,11 @@ Options:
   -V | --version                print the script version
 
 ${flagdesc}s can take the following form:
-  [string pad "+$mode | $mode" 22]set the $flagdesc
-  [string pad "-$mode" 22]unset the $flagdesc
-  [string pad "%$mode" 22]reset the $flagdesc (remove it from the file)
-  [string pad "?$mode" 22]query the $flagdesc
+  [string pad "+$mode | $mode" 21] set the $flagdesc
+  [string pad "-$mode" 21] unset the $flagdesc
+  [string pad "%$mode" 21] reset the $flagdesc (remove it from the file)
+  [string pad "?$mode" 21] query the $flagdesc
+  [string pad "%%" 21] reset all ${flagdesc}s
 "
         # TODO: --pretend   don't do any changes ; with --verbose, print what would be done
         # TODO: --sort      just sort the file
