@@ -1,0 +1,94 @@
+#!/usr/bin/env tclsh8.6
+#############################################################################
+#   ungarble                                                                #
+#                                                                           #
+# Script for extracting base64-encoded images from a file.                  #
+#############################################################################
+
+
+#############################################################################
+#############################################################################
+#
+# Packages
+#
+#############################################################################
+#############################################################################
+
+package require Tcl 8.6
+
+lappend auto_path [file normalize [file join [file dirname $::argv0] ../tcl]]
+
+package require qutils
+package require getopt
+package require debug
+
+namespace import ::qutils::die
+
+
+#############################################################################
+#############################################################################
+#
+# Body
+#
+#############################################################################
+#############################################################################
+
+# Process command line arguments
+set args {}
+getopt flag arg $argv {
+    -h? - --help {
+        puts "  Usage: $::argv0 <input files>
+
+Extract and decode garbled (base64-encoded) pictures from one or several
+files (usually emails)."
+        exit 0
+    }
+    missing {
+        die "option requires argument: $arg" 2
+    }
+    unknown {
+        die "unknown or ambiguous option: $arg" 2
+    }
+    arglist {
+        set args $arg
+    }
+}
+set inputs [lassign $args]
+if {![llength $inputs]} {
+    die "missing input file" 2
+}
+
+# Process each input file
+foreach file $inputs {
+    # Read in the file
+    try {
+        set fd [open $file]
+        set data [read $fd]
+        close $fd
+    } on error {result options} {
+        puts stderr "Warning: unable to read file: $file"
+        continue
+    }
+
+    # Extract the images
+    set images [regexp -all -inline -- {data:image/([^;]+);base64,([^"]+)} $data] ;#"
+
+    # Process each image
+    set n 1
+    foreach {- type image} $images {
+        # Open the output file
+        set suffix ""
+        if {[llength $images] > 3} {
+            set suffix ".$n"
+        }
+        set fd [open [file rootname $file]${suffix}.${type} wb]
+
+        # Decode and dump the data
+        puts -nonewline $fd [binary decode base64 [string map {= "" \n ""} $image]]
+        close $fd
+        incr n
+    }
+}
+
+
+# vim: ft=tcl
