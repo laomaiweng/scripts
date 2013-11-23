@@ -571,6 +571,7 @@ ${flagdesc}s can take the following form:
   [string pad "?$mode" 21] query the $flagdesc
   [string pad "%%" 21] reset all ${flagdesc}s
 "
+        # TODO: --align     to align all flags in all blocks
         # TODO: --pretend   don't do any changes ; with --verbose, print what would be done
         # TODO: --sort      just sort the file
         # TODO: multiple --verbose switches increase the level of verbosity
@@ -780,7 +781,11 @@ if {$query ne ""} {
 }
 # If we're being verbose, display the resulting flags
 if {$verbose} {
-    puts "${flagdesc}s: $flags"
+    if {[llength $flags]} {
+        puts "${flagdesc}s: [join $flags]"
+    } else {
+        puts "No ${flagdesc}s."
+    }
 }
 
 # vim:ft=tcl
