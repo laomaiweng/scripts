@@ -9,9 +9,8 @@ if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
 then
     echo "  Usage: ${0##*/} [options] <hardlinks file>
 
-Check the consistency of hardlinks described in the file given as a parameter:
-all files must map to the same inode number.
-The hardlinks file should contain a series of lines, each line consisting of a
+Check the consistency of hardlinks described in the given hardlinks file.
+The hardlinks file should contain several lines, each line consisting of a
 list of files sharing the same inode.
 When the --fix option is specified, all files on a line are hardlinked to the
 inode of the first file of the line.
@@ -56,8 +55,14 @@ do
         # Check that the file exists
         if [[ ! -f "$F" ]]
         then
-            echo "Missing: $F"
-            continue
+            if [[ $INODE == 0 ]]
+            then
+                echo "Missing reference: $F"
+                continue 2
+            else
+                echo "Missing: $F"
+                continue
+            fi
         fi
         # Get the file's inode
         IF=$(ls -i "$F" | cut -d" " -f1)
