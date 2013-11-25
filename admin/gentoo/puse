@@ -81,6 +81,7 @@ set category_rx     {(?:[a-zA-Z0-9_][a-zA-Z0-9_+.-]*)}
 set package_rx      {(?:[a-zA-Z0-9_][a-zA-Z0-9_+]*(?:-(?:[a-zA-Z0-9_+]*-)*[a-zA-Z_+]*)?)}
 set version_rx      {(?:[0-9]+(?:\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?)}
 set revision_rx     {(?:r[0-9]+)}
+set slot_rx         {(?::(?:[0-9]|[0-9][0-9.]*[0-9]))}
 set postfix_rx      {(?:\*)}
 set use_rx          {(?:[a-zA-Z0-9][a-zA-Z0-9@_+-]*)}
 set keyword_rx      {(?:~?[a-zA-Z0-9_][a-zA-Z0-9_-]*)}
@@ -171,6 +172,7 @@ proc SetupMode {m} {
 #   name            return the atom's name
 #   version         return the atom's version
 #   revision        return the atom's revision
+#   slot            return the atom's slot
 #   postfix         return the atom's postfix
 #   basecat         return the atom's base category
 #   subcat          return the atom's sub-category
@@ -195,6 +197,7 @@ proc SetupMode {m} {
 #   package_rx      package regexp
 #   version_rx      version regexp
 #   revision_rx     revision regexp
+#   slot_rx         slot regexp
 #   postfix_rx      postfix regexp
 #
 # Variables: NONE
@@ -208,6 +211,7 @@ proc Atom {args} {
     global package_rx
     global version_rx
     global revision_rx
+    global slot_rx
     global postfix_rx
 
     # Define a function for appending to the return list
@@ -244,7 +248,7 @@ proc Atom {args} {
     }
 
     # Split the atom
-    if {![regexp -- "^(${constraint_rx})?(((${category_rx})/(${package_rx}))(?:-((${version_rx})(?:-(${revision_rx}))?))?)(${postfix_rx})?\$" $atom -> constraint fullpack basename category name fullver version revision postfix]} {
+    if {![regexp -- "^(${constraint_rx})?(((${category_rx})/(${package_rx}))(?:-((${version_rx})(?:-(${revision_rx}))?))?)(${slot_rx})?(${postfix_rx})?\$" $atom -> constraint fullpack basename category name fullver version revision slot postfix]} {
         # Atom does not match regexp, bail out
         return -code error "invalid atom: $atom"
     }
@@ -263,6 +267,7 @@ proc Atom {args} {
             name -
             version -
             revision -
+            slot -
             postfix -
             basename -
             fullver -
@@ -787,5 +792,6 @@ if {$verbose} {
         puts "No ${flagdesc}s."
     }
 }
+
 
 # vim:ft=tcl
