@@ -53,9 +53,11 @@ set mode ""
 # Flag description (used in messages ; set by [SetupMode])
 set flagdesc ""
 # Flagspec status regexp
-set flagstatusrx {[?%+-]}
+set flagspecstatusrx {[?%+-]}
 # Flagspec regexp capturing status (+-%?) and flag (set by [SetupMode])
-set flagrx ""
+set flagspecrx ""
+# Flag status regexp
+set flagstatusrx {[+-]}
 
 # Comment for the line
 set comment ""
@@ -104,14 +106,14 @@ set license_rx      {(?:[[:graph:]]+)}
 #   m           user operating mode (possibly invalid)
 #
 # Globals:
-#   mode            selected operating mode
-#   flagdesc        flag description
-#   flagstatusrx    flag status regexp
-#   flagrx          flagspec regexp
-#   path            path to the default target file of the mode
-#   use_rx          USE flag regexp
-#   keyword_rx      keyword regexp
-#   license_rx      license regexp
+#   mode                selected operating mode
+#   flagdesc            flag description
+#   flagspecstatusrx    flagspec status regexp
+#   flagspecrx          flagspec regexp
+#   path                path to the default target file of the mode
+#   use_rx              USE flag regexp
+#   keyword_rx          keyword regexp
+#   license_rx          license regexp
 #
 # Variables: NONE
 #
@@ -121,8 +123,8 @@ set license_rx      {(?:[[:graph:]]+)}
 proc SetupMode {m} {
     global mode
     global flagdesc
-    global flagstatusrx
-    global flagrx
+    global flagspecstatusrx
+    global flagspecrx
     global path
     global use_rx
     global keyword_rx
@@ -136,7 +138,7 @@ proc SetupMode {m} {
             # Setup variables
             set path "/etc/portage/package.accept_keywords"
             set flagdesc "keyword"
-            set flagrx "^(${flagstatusrx}?)(${keyword_rx})\$"
+            set flagspecrx "^(${flagspecstatusrx}?)(${keyword_rx})\$"
         }
 
         "lic" {
@@ -145,7 +147,7 @@ proc SetupMode {m} {
             # Setup variables
             set path "/etc/portage/package.license"
             set flagdesc "license"
-            set flagrx "^(${flagstatusrx}?)(${license_rx})\$"
+            set flagspecrx "^(${flagspecstatusrx}?)(${license_rx})\$"
         }
 
         "use" -
@@ -155,7 +157,7 @@ proc SetupMode {m} {
             # Setup variables
             set path "/etc/portage/package.use"
             set flagdesc "USE flag"
-            set flagrx "^(${flagstatusrx}?)(${use_rx})\$"
+            set flagspecrx "^(${flagspecstatusrx}?)(${use_rx})\$"
         }
     }
 
@@ -319,7 +321,7 @@ proc Atom {args} {
 #   flagVar     flag variable
 #
 # Globals:
-#   flagrx      flagspec regexp
+#   flagspecrx  flagspec regexp
 #
 # Variables: NONE
 #
@@ -327,11 +329,11 @@ proc Atom {args} {
 #   boolean indicating success or failure of parse
 #############################################################################
 proc ParseFlagspec {flagspec statusVar flagVar} {
-    global flagrx
+    global flagspecrx
     upvar 1 $statusVar status $flagVar flag
 
     # Parse the flagspec according to the mode's regexp and return the result
-    return [regexp -- $flagrx $flagspec -> status flag]
+    return [regexp -- $flagspecrx $flagspec -> status flag]
 }
 
 #############################################################################
@@ -360,14 +362,17 @@ proc CompareFlags {fs1 fs2} {
 
 #############################################################################
 # Update a list of flags according to a list of flagspecs.
+# The list is also sorted and duplicates are removed (except for the last
+# occurence).
 #
 # Arguments:
 #   flags       list of flags
 #   flagspecs   list of flagspecs
 #
 # Globals:
-#   query       holds the result of query flagspecs
-#   queryonly   holds whether only queries were done on the flags
+#   flagstatusrx    flag status regexp
+#   query           holds the result of query flagspecs
+#   queryonly       holds whether only queries were done on the flags
 #
 # Variables: NONE
 #
@@ -375,67 +380,73 @@ proc CompareFlags {fs1 fs2} {
 #   updated list of flags
 #############################################################################
 proc UpdateFlags {flags flagspecs} {
-    global query queryonly
+    global flagstatusrx query queryonly
+
+    # Sort the flags and remove duplicates
+    set flags [lsort -command CompareFlags -unique $flags]
 
     # Process each flagspec
     foreach spec $flagspecs {
-        # Process the special %% flagspec
-        if {$spec eq "%%"} {
-            # Reset all flags
-            set flags {}
-            # By the way, now we're not just querying
-            set queryonly false
-            # Carry on
-            continue
+        # Process special flagspecs
+        switch -- $spec {
+            "%%" {
+                # Reset all flags
+                set flags {}
+                # By the way, now we're not just querying
+                set queryonly false
+                # Carry on
+                continue
+            }
+
+            "??" {
+                # Add all flags to the query
+                lappend query $flags
+                # Carry on
+                continue
+            }
         }
 
         # Parse the flagspec
         if {![ParseFlagspec $spec action flag]} {
             die "wrong format for flag: $spec" 2
         }
-        if {$action eq ""} {
-            set action "+"
-        }
-        # Search for the flag
-        set iflag [lsearch -all -regexp $flags "^\[+-\]?[reEscape $flag]\$"]
+        # Search for the insertion/replacement position for the flag
+        set iflag [lsearch -bisect -regexp $flags "^${flagstatusrx}?[reEscape $flag]\$"]
+        # Check whether the flag is present at this position
+        set present [regexp -- "^${flagstatusrx}?[reEscape $flag]\$" [lindex $flags $iflag]]
 
         # Process the flag according to its action
         switch -- $action {
-            + {
-                # Set the flag
-                # Remove all occurences of the flag
-                set flags [lremove $flags $iflag]
-                # Append the flagspec
-                lappend flags $flag
-                # By the way, now we're not just querying
-                set queryonly false
-            }
-
+            + - "" -
             - {
-                # Unset the flag
-                # Remove all occurences of the flag
-                set flags [lremove $flags $iflag]
-                # Append the flagspec
-                lappend flags -$flag
+                ## Set/Unset the flag
+                # Prepare the flag name (strip the leading +, if any)
+                set flag [string trimleft $flag +]
+                # Insert/replace the flag
+                if {$present} {
+                    set flags [lreplace $flags $iflag $iflag $flag]
+                } else {
+                    set flags [linsert $flags $iflag $flag]
+                }
                 # By the way, now we're not just querying
                 set queryonly false
             }
 
             % {
-                # Reset the flag
-                # Remove all occurences of the flag
-                set flags [lremove $flags $iflag]
+                ## Reset the flag
+                # Remove the flag
+                if {$present} {
+                    set flags [lremove $flags $iflag]
+                }
                 # By the way, now we're not just querying
                 set queryonly false
             }
 
             ? {
-                # Query the flag
-                # Remove all occurences of the flag but the last
-                set flags [lremove $flags [lrange $iflag 0 end-1]]
+                ## Query the flag
                 # Append the state of the flag to the query results
-                if {[llength $iflag] > 0} {
-                    lappend query [lindex $flags [lindex $iflag end]]
+                if {$present} {
+                    lappend query [lindex $flags $iflag]
                 } else {
                     lappend query %$flag
                 }
@@ -443,8 +454,8 @@ proc UpdateFlags {flags flagspecs} {
         }
     }
 
-    # Sort and return the flags
-    return [lsort -command CompareFlags $flags]
+    # Return the updated flags
+    return $flags
 }
 
 #############################################################################
@@ -572,9 +583,10 @@ Options:
 ${flagdesc}s can take the following form:
   [string pad "+$mode | $mode" 21] set the $flagdesc
   [string pad "-$mode" 21] unset the $flagdesc
-  [string pad "%$mode" 21] reset the $flagdesc (remove it from the file)
-  [string pad "?$mode" 21] query the $flagdesc
+  [string pad "%$mode" 21] reset the $flagdesc
   [string pad "%%" 21] reset all ${flagdesc}s
+  [string pad "?$mode" 21] query the $flagdesc
+  [string pad "??" 21] query all ${flagdesc}s
 "
         # TODO: --align     to align all flags in all blocks
         # TODO: --pretend   don't do any changes ; with --verbose, print what would be done
@@ -770,27 +782,27 @@ if {[llength $iline] > 1} {
     }
 }
 
+# Display the query results
+if {[llength $query]} {
+    puts "Quer[expr {[llength $query] == 1 ? "y" : "ies"}]:
+  [join $query "\n  "]"
+}
+# If we're being verbose, display the resulting flags
+if {$verbose} {
+    if {[llength $flags]} {
+        puts "[string totitle ${flagdesc}s]: [join $flags]"
+    } else {
+        puts "No ${flagdesc}s."
+    }
+}
+
 # Write back the file unless we did nothing else but query flags
 if {!$queryonly} {
     try {
         set fd [open $path w]
         puts $fd [join $file \n]
         close $fd
-    } on error {} {die "Error: unable to write to file $path" 1}
-}
-
-# Display the query results
-if {$query ne ""} {
-    set query [lsort -command CompareFlags $query]
-    puts "Query: $atom [join $query]"
-}
-# If we're being verbose, display the resulting flags
-if {$verbose} {
-    if {[llength $flags]} {
-        puts "${flagdesc}s: [join $flags]"
-    } else {
-        puts "No ${flagdesc}s."
-    }
+    } on error {} {die "unable to write to file $path" 1}
 }
 
 
