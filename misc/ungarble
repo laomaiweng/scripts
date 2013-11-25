@@ -65,7 +65,7 @@ foreach file $inputs {
         set fd [open $file]
         set data [read $fd]
         close $fd
-    } on error {result options} {
+    } on error {} {
         puts stderr "Warning: unable to read file: $file"
         continue
     }

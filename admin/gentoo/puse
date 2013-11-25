@@ -404,7 +404,7 @@ proc UpdateFlags {flags flagspecs} {
             + {
                 # Set the flag
                 # Remove all occurences of the flag
-                lremove flags $iflag
+                set flags [lremove $flags $iflag]
                 # Append the flagspec
                 lappend flags $flag
                 # By the way, now we're not just querying
@@ -414,7 +414,7 @@ proc UpdateFlags {flags flagspecs} {
             - {
                 # Unset the flag
                 # Remove all occurences of the flag
-                lremove flags $iflag
+                set flags [lremove $flags $iflag]
                 # Append the flagspec
                 lappend flags -$flag
                 # By the way, now we're not just querying
@@ -424,7 +424,7 @@ proc UpdateFlags {flags flagspecs} {
             % {
                 # Reset the flag
                 # Remove all occurences of the flag
-                lremove flags $iflag
+                set flags [lremove $flags $iflag]
                 # By the way, now we're not just querying
                 set queryonly false
             }
@@ -432,7 +432,7 @@ proc UpdateFlags {flags flagspecs} {
             ? {
                 # Query the flag
                 # Remove all occurences of the flag but the last
-                lremove flags [lrange $iflag 0 end-1]
+                set flags [lremove $flags [lrange $iflag 0 end-1]]
                 # Append the state of the flag to the query results
                 if {[llength $iflag] > 0} {
                     lappend query [lindex $flags [lindex $iflag end]]
@@ -604,16 +604,16 @@ if {$atom eq "" || ![llength $flagspecs]} {
     die "missing atom and/or ${flagdesc}s" 2
 }
 # Check and parse the atom
-if {[catch {set atomdict [Atom --dict * $atom]}]} {
-    die "atom seems invalid: $atom" 2
-}
+try {
+    set atomdict [Atom --dict * $atom]
+} on error {} {die "atom seems invalid: $atom" 2}
 
 # Read in the file
-if {[catch {open $path r} fd]} {
-    die "unable to read file $path" 1
-}
-set file [split [read -nonewline $fd] "\n"]
-close $fd
+try {
+    set fd [open $path r]
+    set file [split [read -nonewline $fd] "\n"]
+    close $fd
+} on error {} {die "unable to read file $path" 1}
 
 # Search for the atom
 set iline [lsearch -all -regexp $file "^[reEscape $atom]\\s"]
@@ -756,7 +756,7 @@ if {[llength $iline] > 1} {
         lset file $iline $nline
     } else {
         # Empty flags, remove the line
-        lremove file $iline
+        set file [lremove $file $iline]
 
         # If the atom was alone in its category block, the block is now gone:
         # remove one of its surrounding blank lines
@@ -764,7 +764,7 @@ if {[llength $iline] > 1} {
             # Only remove a line if both surrounding lines are indeed blank
             if {[string is space [lindex $file $iline]] &&
                 [string is space [lindex $file [expr {$iline-1}]]]} {
-                lremove file $iline
+                set file [lremove $file $iline]
             }
         }
     }
@@ -772,11 +772,11 @@ if {[llength $iline] > 1} {
 
 # Write back the file unless we did nothing else but query flags
 if {!$queryonly} {
-    if {[catch {open $path w} fd]} {
-        die "unable to write to file $path" 1
-    }
-    puts $fd [join $file \n]
-    close $fd
+    try {
+        set fd [open $path w]
+        puts $fd [join $file \n]
+        close $fd
+    } on error {} {die "Error: unable to write to file $path" 1}
 }
 
 # Display the query results

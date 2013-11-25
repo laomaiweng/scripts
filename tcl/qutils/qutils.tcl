@@ -108,24 +108,26 @@ proc ::qutils::reEscape {str} {
 # Remove indices from a list.
 #
 # Arguments:
-#   listVar     list variable to strip indices from
-#   indices     indices to strip from the list
+#   list        list to remove indices from
+#   indices     indices to remove from the list
 #
 # Globals: NONE
 #
 # Variables: NONE
 #
-# Return: NONE
+# Return:
+#   list with indices removed
 #############################################################################
-proc ::qutils::lremove {listVar indices} {
-    upvar 1 $listVar list
+proc ::qutils::lremove {list indices} {
     # Sort the indices in decreasing order (so that indices get removed from
     # the end of the list first and don't impact removal of other indices)
-    set indices [lsort -integer -decreasing $indices]
-    # Remove each index
+    set indices [lsort -integer -decreasing -unique $indices]
+    # Remove the indices
     foreach i $indices {
         set list [lreplace $list $i $i]
     }
+    # Return the list
+    return $list
 }
 
 #############################################################################
