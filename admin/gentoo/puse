@@ -420,13 +420,13 @@ proc UpdateFlags {flags flagspecs} {
             + - "" -
             - {
                 ## Set/Unset the flag
-                # Prepare the flag name (strip the leading +, if any)
-                set flag [string trimleft $flag +]
+                # Modify the action not to add a +
+                set action [expr {$action eq "+" ? "" : $action}]
                 # Insert/replace the flag
                 if {$present} {
-                    set flags [lreplace $flags $iflag $iflag $flag]
+                    set flags [lreplace $flags $iflag $iflag $action$flag]
                 } else {
-                    set flags [linsert $flags $iflag $flag]
+                    set flags [linsert $flags $iflag $action$flag]
                 }
                 # By the way, now we're not just querying
                 set queryonly false
