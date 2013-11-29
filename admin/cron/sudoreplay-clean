@@ -1,0 +1,21 @@
+#!/bin/bash
+
+LOGDIR=/var/log/sudo-io
+
+CURRENTDATE=$(/bin/date +%F)
+DROPYEAR=$(($(/bin/date +%Y)-1))
+DROPDATE=$DROPYEAR-$(/bin/date +%m-%d)
+
+/usr/bin/sudoreplay -d $LOGDIR -l todate $DROPDATE | /usr/bin/awk -v SCRIPT="${0##*/}" -v LOGDIR="$LOGDIR" -- '
+BEGIN {
+    FS = " ; "
+}
+{
+    ID = gensub( "TSID=([0-9A-Z]{2})([0-9A-Z]{2})([0-9A-Z]{2})", "\\1/\\2/\\3", "g", $4 )
+    system( "/bin/rm -Rf " LOGDIR "/" ID )
+    system( "/usr/bin/logger -t " SCRIPT " \"Dropped sudoreplay entry: < " gensub( "\"", "\\\"", "g" ) " >\"" )
+}
+'
+
+exit 0
+
