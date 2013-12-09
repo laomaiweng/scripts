@@ -158,3 +158,54 @@ proc ::qutils::stringPad {string length {char " "} {atleast 0}} {
 # Extend the string ensemble with [string pad]
 ::qutils::ensembleExtend string pad ::qutils::stringPad
 
+#############################################################################
+# Custom ::tcl::string::is subcommand to the string ensemble.
+#
+# Arguments:
+#   args    "class string" for the class check
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   result of the class check
+#############################################################################
+proc ::qutils::stringIs {args} {
+    # Custom class check (doesn't handle standard ::tcl::string::is options)
+    lassign $args class string
+    switch -- $class {
+        dict {
+            # Check whether the string parses correctly as a dict
+            return [expr {![catch {dict size $string}]}]
+        }
+    }
+    # Default class check
+    return [::tcl::string::is {*}$args]
+}
+
+# Replace the string ensemble's [string is]
+::qutils::ensembleExtend string is ::qutils::stringIs
+
+#############################################################################
+# Returns whether a string is an existing procedure or command name,
+# in the caller's namespace.
+#
+# Arguments:
+#   name    procedure or command name to test for existence
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   boolean indicating whether the procedure or command exists
+#############################################################################
+proc ::qutils::infoPCExists {name} {
+    # Check whether the name matches that of a procedure or command
+    return [uplevel 1 expr "\{\[info procs $name\] ne \"\" || \[info commands $name\] ne \"\"\}"]
+}
+
+# Extend the info ensemble with [info pcexists]
+::qutils::ensembleExtend info pcexists ::qutils::infoPCExists
+
