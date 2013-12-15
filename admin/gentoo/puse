@@ -337,30 +337,6 @@ proc ParseFlagspec {flagspec statusVar flagVar} {
 }
 
 #############################################################################
-# Compare two flagspecs alphabetically, ignoring leading symbols.
-#
-# Arguments:
-#   fs1     first flagspec
-#   fs2     second flagspec
-#
-# Globals: NONE
-#
-# Variables: NONE
-#
-# Return:
-#   an integer less than, equal to, or greater than zero if the first
-#   flagspec is to be considered less than, equal to, or greater than the
-#   second, respectively
-#############################################################################
-proc CompareFlags {fs1 fs2} {
-    # Get the flag names
-    ParseFlagspec $fs1 - f1
-    ParseFlagspec $fs2 - f2
-    # Compare them
-    return [string compare $f1 $f2]
-}
-
-#############################################################################
 # Update a list of flags according to a list of flagspecs.
 # The list is also sorted and duplicates are removed (except for the last
 # occurence).
@@ -382,8 +358,13 @@ proc CompareFlags {fs1 fs2} {
 proc UpdateFlags {flags flagspecs} {
     global flagstatusrx query queryonly
 
+    # Augment the flags list with the flag names, for sorting and searching
+    set flags [lmap f $flags {
+        ParseFlagspec $f a n
+        list $n $f
+    }]
     # Sort the flags and remove duplicates
-    set flags [lsort -command CompareFlags -unique $flags]
+    set flags [lsort -dictionary -index 0 -unique $flags]
 
     # Process each flagspec
     foreach spec $flagspecs {
@@ -400,7 +381,9 @@ proc UpdateFlags {flags flagspecs} {
 
             "??" {
                 # Add all flags to the query
-                lappend query $flags
+                lappend query [lmap f $flags {
+                    lindex $f 1
+                }]
                 # Carry on
                 continue
             }
@@ -411,9 +394,9 @@ proc UpdateFlags {flags flagspecs} {
             die "wrong format for flag: $spec" 2
         }
         # Search for the insertion/replacement position for the flag
-        set iflag [lsearch -bisect -regexp $flags "^${flagstatusrx}?[reEscape $flag]\$"]
+        set iflag [lsearch -bisect -index 0 $flags $flag]
         # Check whether the flag is present at this position
-        set present [regexp -- "^${flagstatusrx}?[reEscape $flag]\$" [lindex $flags $iflag]]
+        set present [expr {$flag eq [lindex $flags $iflag 0]}]
 
         # Process the flag according to its action
         switch -- $action {
@@ -422,11 +405,17 @@ proc UpdateFlags {flags flagspecs} {
                 ## Set/Unset the flag
                 # Modify the action not to add a +
                 set action [expr {$action eq "+" ? "" : $action}]
+                # Prepare the list item to replace/insert
+                set item [list $flag $action$flag]
                 # Insert/replace the flag
                 if {$present} {
-                    set flags [lreplace $flags $iflag $iflag $action$flag]
+                    # Replace the flag
+                    lset flags $iflag $item
                 } else {
-                    set flags [linsert $flags $iflag $action$flag]
+                    # Increment the index (bisect returns the previous index)
+                    incr iflag
+                    # Insert the flag
+                    set flags [linsert $flags $iflag $item]
                 }
                 # By the way, now we're not just querying
                 set queryonly false
@@ -446,7 +435,7 @@ proc UpdateFlags {flags flagspecs} {
                 ## Query the flag
                 # Append the state of the flag to the query results
                 if {$present} {
-                    lappend query [lindex $flags $iflag]
+                    lappend query [lindex $flags $iflag 1]
                 } else {
                     lappend query %$flag
                 }
@@ -454,6 +443,10 @@ proc UpdateFlags {flags flagspecs} {
         }
     }
 
+    # Un-augment the flags
+    set flags [lmap f $flags {
+        lindex $f 1
+    }]
     # Return the updated flags
     return $flags
 }
@@ -623,7 +616,7 @@ try {
 # Read in the file
 try {
     set fd [open $path r]
-    set file [split [read -nonewline $fd] "\n"]
+    set file [split [read -nonewline $fd] \n]
     close $fd
 } on error {} {die "unable to read file $path" 1}
 
