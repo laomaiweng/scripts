@@ -6,7 +6,7 @@
 # Useful Tcl utilities.                                                     #
 #############################################################################
 
-package provide qutils 1.0
+package provide qutils 1.1
 
 
 # Define the qutils namespace and export all its commands
@@ -68,6 +68,121 @@ proc ::qutils::die {message {code 1} {prefix "Error: "}} {
 }
 
 #############################################################################
+# Remove indices from a list.
+#
+# Arguments:
+#   list        list to remove indices from
+#   indices     indices to remove from the list
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   list with indices removed
+#############################################################################
+proc ::qutils::lremove {list indices} {
+    # Sort the indices in decreasing order (so that indices get removed from
+    # the end of the list first and don't impact removal of other indices)
+    set indices [lsort -integer -decreasing -unique $indices]
+    # Remove the indices
+    foreach i $indices {
+        set list [lreplace $list $i $i]
+    }
+    # Return the list
+    return $list
+}
+
+#############################################################################
+# Trim leading 0s from a string representing an integer to prevent it from
+# being parsed as an octal number.
+#
+# Arguments:
+#   int     string representing a base-10 integer
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   string representing a base-10 integer, leading 0s trimmed
+#############################################################################
+proc ::qutils::unoctalize {int} {
+    if {$int ne ""} {
+        set int10 [string trimleft $int 0]
+        if {$int10 eq ""} {
+            set int10 0
+        }
+        if {[string is entier -strict $int10]} {
+            return $int10
+        }
+    }
+    return $int
+}
+
+#############################################################################
+# Returns -1, 0, or 1, depending on whether v1 is less than, equal to, or
+# greater than v2.
+#
+# Arguments:
+#   v1      version number
+#   v2      version number
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   -1, 0, or 1 depending on the result of the comparison
+#############################################################################
+proc ::qutils::compareVersions {v1 v2} {
+    # First, just check whether the version strings are the same
+    if {$v1 eq $v2} {
+        # Don't even bother checking further
+        return 0
+    }
+
+    # Parse the version strings (that's a Gentoo PMS version string)
+    # TODO: support more version string formats
+    set version_rx {^(?:v?([0-9]+(?:\.[0-9]+)*)([a-z])?(?:_(alpha|beta|pre|rc|p)([0-9]*))?)$}
+    if {![regexp -- $version_rx $v1 -> v1_patchlevel v1_letter v1_stage v1_stage#]} {
+        return -code error "invalid version string: $v1"
+    }
+    if {![regexp -- $version_rx $v2 -> v2_patchlevel v2_letter v2_stage v2_stage#]} {
+        return -code error "invalid version string: $v2"
+    }
+
+    # Compare the patchlevels
+    foreach p1 [split $v1_patchlevel .] p2 [split $v2_patchlevel .] {
+        set p1 [unoctalize $p1]
+        set p2 [unoctalize $p2]
+        if {$p1 ne $p2} {
+            return [expr {($p1 > $p2) ? 1 : -1}]
+        }
+    }
+    # Compare the letters
+    if {$v1_letter ne $v2_letter} {
+        return [expr {($v1_letter > $v2_letter) ? 1 : -1}]
+    }
+    # Compare the stages
+    set stages [list alpha beta pre rc "" p]
+    if {$v1_stage ne $v2_stage} {
+        set s1 [lsearch -exact $stages $v1_stage]
+        set s2 [lsearch -exact $stages $v2_stage]
+        return [expr {($s1 > $s2) ? 1 : -1}]
+    }
+    # Compare the stage numbers
+    set s1 [unoctalize ${v1_stage#}]
+    set s2 [unoctalize ${v2_stage#}]
+    if {$s1 ne $s2} {
+        return [expr {($s1 > $s2) ? 1 : -1}]
+    }
+
+    # Done comparing: they're the same
+    return 0
+}
+
+#############################################################################
 # Extend a Tcl ensemble with a command/proc.
 #
 # Arguments:
@@ -100,35 +215,12 @@ proc ::qutils::ensembleExtend {ensemble subcommand proc} {
 # Return:
 #   escaped string that can safely be used as a fixed string in a regexp
 #############################################################################
-proc ::qutils::reEscape {str} {
-    regsub -all {\W} $str {\\&}
+proc ::qutils::stringEscape {str} {
+    return [regsub -all {\W} $str {\\&}]
 }
 
-#############################################################################
-# Remove indices from a list.
-#
-# Arguments:
-#   list        list to remove indices from
-#   indices     indices to remove from the list
-#
-# Globals: NONE
-#
-# Variables: NONE
-#
-# Return:
-#   list with indices removed
-#############################################################################
-proc ::qutils::lremove {list indices} {
-    # Sort the indices in decreasing order (so that indices get removed from
-    # the end of the list first and don't impact removal of other indices)
-    set indices [lsort -integer -decreasing -unique $indices]
-    # Remove the indices
-    foreach i $indices {
-        set list [lreplace $list $i $i]
-    }
-    # Return the list
-    return $list
-}
+# Extend the string ensemble with [string escape]
+::qutils::ensembleExtend string escape ::qutils::stringEscape
 
 #############################################################################
 # Pad a string up to a given target length.
