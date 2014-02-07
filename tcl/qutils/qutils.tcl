@@ -1,19 +1,23 @@
 #############################################################################
-#   qutils.tcl                                                              #
+#   qutils - Q Tcl Utilities                                                #
 #                                                                           #
-# Author: quentin <quentin@minster.io>                                      #
+# Author: quentin <quentin AT minster DOT io>                               #
 #                                                                           #
 # Useful Tcl utilities.                                                     #
+#                                                                           #
+# History:                                                                  #
+# * v1.1    add [info pcexists] and [string is]                             #
+# * v1.0    initial version                                                 #
 #############################################################################
 
-package provide qutils 1.0
+package provide qutils 1.1.1
 
 
 # Package dependencies
 package require cmdline
 
 
-# Define the qutils namespace and export all its commands
+# Define the qutils namespace and export its procedures
 namespace eval qutils {
     namespace export *
 }
@@ -239,3 +243,5 @@ proc ::qutils::infoPCExists {args} {
 # Extend the info ensemble with [info pcexists]
 ::qutils::ensembleExtend info pcexists ::qutils::infoPCExists
 
+
+################################## End of file #################################
