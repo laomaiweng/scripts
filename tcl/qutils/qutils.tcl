@@ -9,6 +9,10 @@
 package provide qutils 1.0
 
 
+# Package dependencies
+package require cmdline
+
+
 # Define the qutils namespace and export all its commands
 namespace eval qutils {
     namespace export *
@@ -191,6 +195,10 @@ proc ::qutils::stringIs {args} {
 # Returns whether a string is an existing procedure or command name,
 # in the caller's namespace.
 #
+# Options:
+#   -proc       test for existence of a proc only
+#   -command    test for existence of a command only
+#
 # Arguments:
 #   name    procedure or command name to test for existence
 #
@@ -201,9 +209,31 @@ proc ::qutils::stringIs {args} {
 # Return:
 #   boolean indicating whether the procedure or command exists
 #############################################################################
-proc ::qutils::infoPCExists {name} {
-    # Check whether the name matches that of a procedure or command
-    return [uplevel 1 expr "\{\[info procs $name\] ne \"\" || \[info commands $name\] ne \"\"\}"]
+proc ::qutils::infoPCExists {args} {
+    # Parse the arguments
+    set usage "info pcexists ?options? name"
+    set options {
+        {proc       "test for existence of a proc only"}
+        {command    "test for existence of a command only"}
+    }
+    array set params [::cmdline::getoptions args $options "$usage\noptions:"]
+    if {[llength $args] ne 1} {
+        return -code error "wrong number of arguments: should be \"$usage\""
+    }
+    lassign $args name
+    set testall [expr {!($params(proc) || $params(command))}]
+
+    # Test for existence
+    set exists 0
+    if {$params(proc) || $testall} {
+        set exists [expr {$exists || [uplevel 1 expr "{\[info procs $name\] ne \"\"}"]}]
+    }
+    if {$params(command) || $testall} {
+        set exists [expr {$exists || [uplevel 1 expr "{\[info commands $name\] ne \"\"}"]}]
+    }
+
+    # Return the result
+    return $exists
 }
 
 # Extend the info ensemble with [info pcexists]
