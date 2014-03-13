@@ -1,0 +1,23 @@
+#!/bin/bash
+# List all Portage sets
+
+PSETS_DIR=/usr/share/portage/config/sets
+
+if [[ "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "  Usage: ${0##*/} [group]"
+    echo
+    echo "Lists all Portage sets belonging to the given group."
+    echo "If no group is specified, lists all Portage sets."
+    echo
+    echo "Available groups:"
+    find "$PSETS_DIR" -iname '*.conf' | sed -e 's/^.*\//  /' -e 's/\..*$//'
+    exit
+fi
+
+for f in $(find "$PSETS_DIR" -iname ${1:-*}.conf)
+do
+    echo "$f" | sed -e 's/^.*\///' -e 's/\..*$/:/'
+    sed -n -e '/^\[.*/ s/^\[\([^]]*\)\]$/  @\1/p' "$f"
+done
+
