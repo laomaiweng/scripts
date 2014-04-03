@@ -15,22 +15,21 @@ AGGREGATELOG=$(mktemp)
 for f in "$LOGDIR"/emerge.log*
 do
     case "${f##*.}" in
-        log)
+        # Raw logfile (maybe rotated)
+        log*)
             cat "$f" >> "$AGGREGATELOG"
             ;;
 
+        # Compressed logfile
         gz)
             zcat "$f" >> "$AGGREGATELOG"
             ;;
-
         bz2)
             bzcat "$f" >> "$AGGREGATELOG"
             ;;
-
         xz)
             xzcat "$f" >> "$AGGREGATELOG"
             ;;
-
         lzma)
             lzcat "$f" >> "$AGGREGATELOG"
             ;;
