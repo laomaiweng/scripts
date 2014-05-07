@@ -1,0 +1,21 @@
+#!/bin/bash
+# nodisplay - unset the DISPLAY environment variable (useful over SSH)
+# dodisplay - restore the DISPLAY environment variable
+
+function nodisplay() {
+    if [[ -n "$DISPLAY" ]]
+    then
+        export OLDDISPLAY="$DISPLAY"
+        export DISPLAY=""
+    fi
+}
+
+
+function dodisplay() {
+    if [[ -n "$OLDDISPLAY" ]]
+    then
+        export DISPLAY="$OLDDISPLAY"
+        export OLDDISPLAY=""
+    fi
+}
+

@@ -1,0 +1,48 @@
+#!/bin/bash
+# qlop wrapper to operate over several emerge.log files
+
+LOGDIR=/var/log
+
+# Help message
+if [[ -z "$1" || "$1" == "-h" || "$1" == "--help" ]]
+then
+    qlop
+    exit
+fi
+
+# Aggregate all log files
+AGGREGATELOG=$(mktemp)
+for f in "$LOGDIR"/emerge.log*
+do
+    case "${f##*.}" in
+        # Raw logfile (maybe rotated)
+        log*)
+            cat "$f" >> "$AGGREGATELOG"
+            ;;
+
+        # Compressed logfile
+        gz)
+            zcat "$f" >> "$AGGREGATELOG"
+            ;;
+        bz2)
+            bzcat "$f" >> "$AGGREGATELOG"
+            ;;
+        xz)
+            xzcat "$f" >> "$AGGREGATELOG"
+            ;;
+        lzma)
+            lzcat "$f" >> "$AGGREGATELOG"
+            ;;
+    esac
+done
+
+# Sort the aggregate log file
+SORTEDLOG=$(mktemp)
+sort -g -t: -k1 -s -o "$SORTEDLOG" "$AGGREGATELOG"
+
+# Operate on the sorted log
+qlop -f "$SORTEDLOG" "$@"
+
+# Remove temporary logs
+rm "$SORTEDLOG" "$AGGREGATELOG"
+
