@@ -1,0 +1,26 @@
+#!/bin/bash
+# gpg-agent-test - test for a running GPG agent
+
+function gpg-agent-test() {
+    [[ $# -ne 1 ]] && { echo "Usage: gpg-agent-test <env-file>" >&2 ; return 1 ; }
+
+    local GPG_AGENT_BINARY=/usr/bin/gpg-agent
+    local GPG_AGENT_ENVFILE="$1"
+
+    # Test for the env file
+    [[ ! -f "$GPG_AGENT_ENVFILE" ]] && return 1
+
+    # Source env file
+    . "$GPG_AGENT_ENVFILE"
+    # Test for the agent info
+    [[ -z "$GPG_AGENT_INFO" ]] && return 1
+
+    # Get the agent PID
+    local GPG_AGENT_PID=$(echo $GPG_AGENT_INFO | cut -d: -f2)
+    # Test for ownership and validity of the PID
+    [[ -O "/proc/$GPG_AGENT_PID" && "$GPG_AGENT_BINARY" -ef "/proc/$GPG_AGENT_PID/exe" ]] || { GPG_AGENT_INFO="" ; return 1 ; }
+
+    # All checks passed: valid agent
+    return 0
+}
+
