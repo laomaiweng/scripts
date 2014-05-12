@@ -1,25 +1,26 @@
 #############################################################################
-#   qutils - Q Tcl Utilities                                                #
+#   lwutils - Laomai Weng's Tcl Utilities                                   #
 #                                                                           #
-# Author: quentin <quentin AT minster DOT io>                               #
+# Author: laomaiweng <laomaiweng AT minster DOT io>                         #
 #                                                                           #
 # Useful Tcl utilities.                                                     #
 #                                                                           #
 # History:                                                                  #
-# * v1.2    add [file normalize]                                            #
+# * v1.2    add [file dereference]                                          #
+#           rename into 'lwutils'                                           #
 # * v1.1    add [info pcexists] and [string is]                             #
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide qutils 1.2
+package provide lwutils 1.2.1
 
 
 # Package dependencies
 package require cmdline
 
 
-# Define the qutils namespace and export its procedures
-namespace eval qutils {
+# Define the lwutils namespace and export its procedures
+namespace eval lwutils {
     namespace export *
 }
 
@@ -44,7 +45,7 @@ namespace eval qutils {
 # Return:
 #   script basename (no leading path, no trailing .tcl)
 #############################################################################
-proc ::qutils::scriptName {} {
+proc ::lwutils::scriptName {} {
     # Strip the path
     set base [file tail $::argv0]
     # Strip any trailing .tcl extension
@@ -69,7 +70,7 @@ proc ::qutils::scriptName {} {
 #
 # Return: NONE
 #############################################################################
-proc ::qutils::die {message {code 1} {prefix "Error: "}} {
+proc ::lwutils::die {message {code 1} {prefix "Error: "}} {
     # Print the message
     puts stderr ${prefix}${message}
     # Exit with the given return code
@@ -90,7 +91,7 @@ proc ::qutils::die {message {code 1} {prefix "Error: "}} {
 #
 # Return: NONE
 #############################################################################
-proc ::qutils::ensembleExtend {ensemble subcommand proc} {
+proc ::lwutils::ensembleExtend {ensemble subcommand proc} {
     set map [namespace ensemble configure $ensemble -map]
     dict set map $subcommand $proc
     namespace ensemble configure $ensemble -map $map
@@ -109,7 +110,7 @@ proc ::qutils::ensembleExtend {ensemble subcommand proc} {
 # Return:
 #   escaped string that can safely be used as a fixed string in a regexp
 #############################################################################
-proc ::qutils::reEscape {str} {
+proc ::lwutils::reEscape {str} {
     regsub -all {\W} $str {\\&}
 }
 
@@ -127,7 +128,7 @@ proc ::qutils::reEscape {str} {
 # Return:
 #   list with indices removed
 #############################################################################
-proc ::qutils::lremove {list indices} {
+proc ::lwutils::lremove {list indices} {
     # Sort the indices in decreasing order (so that indices get removed from
     # the end of the list first and don't impact removal of other indices)
     set indices [lsort -integer -decreasing -unique $indices]
@@ -157,7 +158,7 @@ proc ::qutils::lremove {list indices} {
 # Return:
 #   padded string
 #############################################################################
-proc ::qutils::stringPad {string length {char " "} {atleast 0}} {
+proc ::lwutils::stringPad {string length {char " "} {atleast 0}} {
     # Pad the string with the given character
     append string [string repeat $char $atleast] [string repeat $char [expr {$length-[string length $string]-$atleast}]]
     # Return the padded string
@@ -165,7 +166,7 @@ proc ::qutils::stringPad {string length {char " "} {atleast 0}} {
 }
 
 # Extend the string ensemble with [string pad]
-::qutils::ensembleExtend string pad ::qutils::stringPad
+::lwutils::ensembleExtend string pad ::lwutils::stringPad
 
 #############################################################################
 # Custom ::tcl::string::is subcommand to the string ensemble.
@@ -180,7 +181,7 @@ proc ::qutils::stringPad {string length {char " "} {atleast 0}} {
 # Return:
 #   result of the class check
 #############################################################################
-proc ::qutils::stringIs {args} {
+proc ::lwutils::stringIs {args} {
     # Custom class check (doesn't handle standard ::tcl::string::is options)
     lassign $args class string
     switch -- $class {
@@ -194,7 +195,7 @@ proc ::qutils::stringIs {args} {
 }
 
 # Replace the string ensemble's [string is]
-::qutils::ensembleExtend string is ::qutils::stringIs
+::lwutils::ensembleExtend string is ::lwutils::stringIs
 
 #############################################################################
 # Returns whether a string is an existing procedure or command name,
@@ -214,7 +215,7 @@ proc ::qutils::stringIs {args} {
 # Return:
 #   boolean indicating whether the procedure or command exists
 #############################################################################
-proc ::qutils::infoPCExists {args} {
+proc ::lwutils::infoPCExists {args} {
     # Parse the arguments
     set usage "info pcexists ?options? name"
     set options {
@@ -242,7 +243,7 @@ proc ::qutils::infoPCExists {args} {
 }
 
 # Extend the info ensemble with [info pcexists]
-::qutils::ensembleExtend info pcexists ::qutils::infoPCExists
+::lwutils::ensembleExtend info pcexists ::lwutils::infoPCExists
 
 #############################################################################
 # Dereference the last component in a file name until an actual file is reached.
@@ -257,7 +258,7 @@ proc ::qutils::infoPCExists {args} {
 # Return:
 #   dereferenced file name
 #############################################################################
-proc ::qutils::fileDereference {args} {
+proc ::lwutils::fileDereference {args} {
     # Parse the arguments
     set usage "file dereference name"
     if {[llength $args] ne 1} {
@@ -282,7 +283,7 @@ proc ::qutils::fileDereference {args} {
 }
 
 # Extend the file ensemble with [file dereference]
-::qutils::ensembleExtend file dereference ::qutils::fileDereference
+::lwutils::ensembleExtend file dereference ::lwutils::fileDereference
 
 
 ################################ End of file ################################

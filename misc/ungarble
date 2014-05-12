@@ -18,11 +18,11 @@ package require Tcl 8.6
 
 lappend auto_path [file normalize [file join [file dirname $::argv0] ../tcl]]
 
-package require qutils
+package require lwutils
 package require getopt
 package require debug
 
-namespace import ::qutils::die ::qutils::scriptName
+namespace import ::lwutils::die ::lwutils::scriptName
 
 
 #############################################################################
