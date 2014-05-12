@@ -528,7 +528,7 @@ proc ChooseAlignment {base candidates {stride 4}} {
 #############################################################################
 
 # Detect the operating mode based on the script name
-if {[SetupMode [string tolower [string range [::lwutils::scriptName] 1 end]]]} {
+if {[SetupMode [string tolower [string range [info script -bare] 1 end]]]} {
     # Invalid mode: warn the user
     puts stderr "Warning: cannot determine operating mode from script name, defaulting to 'use'"
 }
@@ -558,7 +558,7 @@ getopt flag arg $argv {
     }
     -h? - --help {
         # Print the help
-        puts "  Usage: [::lwutils::scriptName] \[options\] <atom> <$flagdesc>
+        puts "  Usage: [info script -bare] \[options\] <atom> <$flagdesc>
 
 Add or remove package-specific ${flagdesc}s.
 
@@ -590,7 +590,7 @@ ${flagdesc}s can take the following form:
     }
     -V - --version {
         # Report the version of the program
-        puts "[::lwutils::scriptName] version $version"
+        puts "[info script -bare] version $version"
         exit 0
     }
     missing {

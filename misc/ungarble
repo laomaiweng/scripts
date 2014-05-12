@@ -22,7 +22,7 @@ package require lwutils
 package require getopt
 package require debug
 
-namespace import ::lwutils::die ::lwutils::scriptName
+namespace import ::lwutils::die
 
 
 #############################################################################
@@ -37,7 +37,7 @@ namespace import ::lwutils::die ::lwutils::scriptName
 set args {}
 getopt flag arg $argv {
     -h? - --help {
-        puts "  Usage: [scriptName] <input files>
+        puts "  Usage: [info script -bare] <input files>
 
 Extract and decode garbled (base64-encoded) pictures from one or several
 files (usually emails)."

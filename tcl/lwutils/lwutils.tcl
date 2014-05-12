@@ -8,11 +8,12 @@
 # History:                                                                  #
 # * v1.2    add [file dereference]                                          #
 #           rename into 'lwutils'                                           #
+#           replace [scriptName] with [info script]                         #
 # * v1.1    add [info pcexists] and [string is]                             #
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide lwutils 1.2.1
+package provide lwutils 1.2.2
 
 
 # Package dependencies
@@ -32,29 +33,6 @@ namespace eval lwutils {
 #
 #############################################################################
 #############################################################################
-
-#############################################################################
-# Get the script name.
-#
-# Arguments: NONE
-#
-# Globals: NONE
-#
-# Variables: NONE
-#
-# Return:
-#   script basename (no leading path, no trailing .tcl)
-#############################################################################
-proc ::lwutils::scriptName {} {
-    # Strip the path
-    set base [file tail $::argv0]
-    # Strip any trailing .tcl extension
-    if {[file extension $base] eq ".tcl"} {
-        set base [file rootname $base]
-    }
-    # Return the resulting basename
-    return $base
-}
 
 #############################################################################
 # Print an error message and bail out.
@@ -196,6 +174,63 @@ proc ::lwutils::stringIs {args} {
 
 # Replace the string ensemble's [string is]
 ::lwutils::ensembleExtend string is ::lwutils::stringIs
+
+#############################################################################
+# Custom ::tcl::info::script subcommand to the info ensemble.
+#
+# Options:
+#   -bare       return the script name without leading path nor trailing .tcl
+#
+# Arguments:
+#   filename    new script name (optional)
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   currently evaluated script name
+#############################################################################
+proc ::lwutils::infoScript {args} {
+    # Parse the arguments
+    set usage "info script ?options? ?filename?"
+    set options {
+        {bare       "strip leading path and trailing .tcl"}
+    }
+    array set params [::cmdline::getoptions args $options "$usage\noptions:"]
+    if {[llength $args] > 1} {
+        return -code error "wrong number of arguments: should be \"$usage\""
+    }
+
+    # Query mode: use the current script name
+    if {[llength $args] eq 0} {
+        set filename [::tcl::info::script]
+    # Update mode: use the provided script name
+    } else {
+        lassign $args filename
+    }
+
+    # Process the script name
+    if {$params(bare)} {
+        # Strip the path
+        set filename [file tail $filename]
+        # Strip any trailing .tcl extension
+        if {[file extension $filename] eq ".tcl"} {
+            set filename [file rootname $filename]
+        }
+    }
+
+    # Query mode: return the script name
+    if {[llength $args] eq 0} {
+        return $filename
+    # Update mode: update the script name
+    } else {
+        ::tcl::info::script $filename
+    }
+}
+
+# Replace the info ensemble's [info script]
+::lwutils::ensembleExtend info script ::lwutils::infoScript
 
 #############################################################################
 # Returns whether a string is an existing procedure or command name,
