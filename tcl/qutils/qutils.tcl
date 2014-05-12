@@ -6,11 +6,12 @@
 # Useful Tcl utilities.                                                     #
 #                                                                           #
 # History:                                                                  #
+# * v1.2    add [file normalize]                                            #
 # * v1.1    add [info pcexists] and [string is]                             #
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide qutils 1.1.1
+package provide qutils 1.2
 
 
 # Package dependencies
@@ -242,6 +243,46 @@ proc ::qutils::infoPCExists {args} {
 
 # Extend the info ensemble with [info pcexists]
 ::qutils::ensembleExtend info pcexists ::qutils::infoPCExists
+
+#############################################################################
+# Dereference the last component in a file name until an actual file is reached.
+#
+# Arguments:
+#   name        file name to dereference
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   dereferenced file name
+#############################################################################
+proc ::qutils::fileDereference {args} {
+    # Parse the arguments
+    set usage "file dereference name"
+    if {[llength $args] ne 1} {
+        return -code error "wrong number of arguments: should be \"$usage\""
+    }
+    lassign $args name
+
+    # While the file name is a link
+    while {[file type $name] eq "link"} {
+        # Read the link target
+        set link [file readlink $name]
+        # If the link target is relative, prepend the file dirname
+        if {[file pathtype $link] eq "relative"} {
+            set name [file join [file dirname $name] $link]
+        } else {
+            set name $link
+        }
+    }
+
+    # Return the fully dereferenced name
+    return $name
+}
+
+# Extend the file ensemble with [file dereference]
+::qutils::ensembleExtend file dereference ::qutils::fileDereference
 
 
 ################################ End of file ################################
