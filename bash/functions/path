@@ -5,7 +5,7 @@ function path() {
     # No argument: display help
     if [[ $# -lt 1 ]]
     then
-        echo "  Usage: path <action> [options] <bin|lib|pkc|inc|man> [DIRS]"
+        echo "  Usage: $FUNCNAME <action> [options] <bin|lib|pkc|inc|man> [DIRS]"
         echo "Manipulate path environment variables."
         echo
         echo "Actions:"
