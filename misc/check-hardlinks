@@ -14,14 +14,14 @@ function rc_incr() { # 1:target_rc
 # Check the arguments
 if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
 then
-    echo "  Usage: ${0##*/} [options] <hardlinks file>
+    echo "  Usage: ${0##*/} [options] <hardlinks files>
 
-Check the consistency of hardlinks described in the given hardlinks file.
+Check the consistency of hardlinks described in the given hardlinks files.
 
-The hardlinks file shall contain several lines, each line consisting of a
-list of files sharing the same inode. The first file of a line is used as
+A hardlinks file shall contain several lines, each line consisting of a
+list of files sharing the same inode. The first file on a line is used as
 reference file when fixing broken links or missing files.
-Comments are allowed in the file (whole-line or end-of-line).
+Hardlinks files may contain comments (whole-line or end-of-line).
 
 Available options:
     -f|--fix            fix broken hardlinks
@@ -72,67 +72,81 @@ do
     esac
     shift
 done
-[[ $# != 1 ]] && die -r10 "missing hardlinks file"
-
-# Read the hardlinks file line by line
-RC=0
-while read FILES
+# Test for remaining arguments
+[[ $# -lt 1 ]] && die -r10 "missing hardlinks file"
+# Test for valid hardlinks files
+for F in "$@"
 do
-    # Check that all files on a single line share the same inode
-    INODE=0
-    for F in $FILES
+    [[ ! -r "$F" ]] && die -r10 "invalid hardlinks file '$F'"
+done
+
+# For each hardlinks file
+while [[ $# != 0 ]]
+do
+    # Test the hardlinks file
+    # Read the hardlinks file line by line
+    RC=0
+    while read FILES
     do
-        # Check for comments
-        [[ "${F:0:1}" == "#" ]] && break
-        # Perform tilde expansion
-        F=$(tilde $F)
-        # Check that the file exists
-        if [[ ! -f "$F" ]]
-        then
+        # Check that all files on a single line share the same inode
+        INODE=0
+        for F in $FILES
+        do
+            # Check for comments
+            [[ "${F:0:1}" == "#" ]] && break
+            # Perform tilde expansion
+            F=$(tilde $F)
+            # Check that the file exists
+            if [[ ! -f "$F" ]]
+            then
+                if [[ $INODE == 0 ]]
+                then
+                    [[ -z "$QUIET" ]] && echo "Missing reference: $F"
+                    rc_incr 4
+                    continue 2
+                else
+                    if [[ -z "$FIX" ]]
+                    then
+                        [[ -z "$QUIET" ]] && echo "Missing: $F"
+                    elif [[ ! -d "${F%/*}" ]]
+                    then
+                        [[ -z "$QUIET" ]] && echo "Unreachable: $F"
+                        rc_incr 3
+                    else
+                        ln "$FILE" "$F"
+                        [[ -z "$QUIET" ]] && echo "Fixed missing: $F"
+                    fi
+                    rc_incr 2
+                    continue
+                fi
+            fi
+            # Get the file's inode
+            IF=$(stat -c %i "$F")
+            # Take the path and inode of the first file as a reference
             if [[ $INODE == 0 ]]
             then
-                [[ -z "$QUIET" ]] && echo "Missing reference: $F"
-                rc_incr 4
-                continue 2
-            else
+                FILE=$F
+                INODE=$IF
+            # If inodes do not match, print an error
+            elif [[ $INODE != $IF ]]
+            then
                 if [[ -z "$FIX" ]]
                 then
-                    [[ -z "$QUIET" ]] && echo "Missing: $F"
-                elif [[ ! -d "${F%/*}" ]]
-                then
-                    [[ -z "$QUIET" ]] && echo "Unreachable: $F"
-                    rc_incr 3
+                    [[ -z "$QUIET" ]] && echo "Broken hardlink: $FILES"
                 else
+                    rm "$F"
                     ln "$FILE" "$F"
-                    [[ -z "$QUIET" ]] && echo "Fixed missing: $F"
+                    [[ -z "$QUIET" ]] && echo "Fixed broken hardlink: $FILES"
                 fi
-                rc_incr 2
-                continue
+                rc_incr 1
+                break
             fi
-        fi
-        # Get the file's inode
-        IF=$(stat -c %i "$F")
-        # Take the path and inode of the first file as a reference
-        if [[ $INODE == 0 ]]
-        then
-            FILE=$F
-            INODE=$IF
-        # If inodes do not match, print an error
-        elif [[ $INODE != $IF ]]
-        then
-            if [[ -z "$FIX" ]]
-            then
-                [[ -z "$QUIET" ]] && echo "Broken hardlink: $FILES"
-            else
-                rm "$F"
-                ln "$FILE" "$F"
-                [[ -z "$QUIET" ]] && echo "Fixed broken hardlink: $FILES"
-            fi
-            rc_incr 1
-            break
-        fi
-    done
-done < "$1"
+        done
+    done < "$1"
+    # Move on to the next file
+    shift
+done
+# Display something if all went good
 [[ -z "$QUIET" && $RC == 0 ]] && echo "All good."
 
 # Return the resulting return code
