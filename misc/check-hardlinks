@@ -92,7 +92,7 @@ do
             fi
         fi
         # Get the file's inode
-        IF=$(ls -i "$F" | cut -d" " -f1)
+        IF=$(stat -c %i "$F")
         # Take the path and inode of the first file as a reference
         if [[ $INODE == 0 ]]
         then
