@@ -5,6 +5,12 @@
 source ${0%/*}/../bash/functions/die
 source ${0%/*}/../bash/functions/tilde
 
+# Define some helper functions
+# rc_incr: increase RC to the given value, if not already there
+function rc_incr() { # 1:target_rc
+    [[ $RC -lt $1 ]] && RC=$1
+}
+
 # Check the arguments
 if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
 then
@@ -12,18 +18,27 @@ then
 
 Check the consistency of hardlinks described in the given hardlinks file.
 The hardlinks file shall contain several lines, each line consisting of a
-list of files sharing the same inode.
-When the --fix option is specified, all files on a line are hardlinked to the
-inode of the first file of the line.
+list of files sharing the same inode. The first file of a line is used as
+reference file when fixing broken links.
 
 Available options:
-    -f|--fix    fix mismatched hardlinks (using the first file on each line)"
+    -f|--fix    fix broken hardlinks
+                all files on a line are hardlinked to the line's reference file
+    -q|--quiet  be quiet (return code indicates success/failure)
+
+Return codes:
+    0           all links ok
+    1           some links broken (fixed with --fix)
+    2           some files missing (not fixed with --fix)
+    3           some reference files missing (not fixed with --fix)
+    10          other error"
     exit
 fi
 
 # Process options
-OPTSDONE=""
-FIX=""
+OPTSDONE=
+FIX=
+QUIET=
 while [[ -z "$OPTSDONE" ]]
 do
     case "$1" in
@@ -31,12 +46,16 @@ do
             FIX=true
             ;;
 
+        -q|--quiet)
+            QUIET=true
+            ;;
+
         --)
             OPTSDONE=true
             ;;
 
         -*)
-            die "unknown option '$1'"
+            die -r10 "unknown option '$1'"
             ;;
 
         *)
@@ -44,9 +63,10 @@ do
     esac
     shift
 done
-[[ $# != 1 ]] && die "missing hardlinks file"
+[[ $# != 1 ]] && die -r10 "missing hardlinks file"
 
 # Read the hardlinks file line by line
+RC=0
 while read FILES
 do
     # Check that all files on a single line share the same inode
@@ -62,10 +82,12 @@ do
         then
             if [[ $INODE == 0 ]]
             then
-                echo "Missing reference: $F"
+                [[ -z "$QUIET" ]] && echo "Missing reference: $F"
+                rc_incr 3
                 continue 2
             else
-                echo "Missing: $F"
+                [[ -z "$QUIET" ]] && echo "Missing: $F"
+                rc_incr 2
                 continue
             fi
         fi
@@ -81,14 +103,19 @@ do
         then
             if [[ -z "$FIX" ]]
             then
-                echo "Mismatch: $FILES"
+                [[ -z "$QUIET" ]] && echo "Broken hardlink: $FILES"
             else
                 rm "$F"
                 ln "$FILE" "$F"
-                echo "Fixed mismatch: $FILES"
+                [[ -z "$QUIET" ]] && echo "Fixed broken hardlink: $FILES"
             fi
+            rc_incr 1
             break
         fi
     done
 done < "$1"
+[[ -z "$QUIET" && $RC == 0 ]] && echo "All good."
+
+# Return the resulting return code
+exit $RC
 
