@@ -17,9 +17,11 @@ then
     echo "  Usage: ${0##*/} [options] <hardlinks file>
 
 Check the consistency of hardlinks described in the given hardlinks file.
+
 The hardlinks file shall contain several lines, each line consisting of a
 list of files sharing the same inode. The first file of a line is used as
 reference file when fixing broken links.
+Comments are allowed in the file (whole-line or end-of-line).
 
 Available options:
     -f|--fix    fix broken hardlinks
