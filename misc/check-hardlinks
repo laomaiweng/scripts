@@ -20,31 +20,38 @@ Check the consistency of hardlinks described in the given hardlinks file.
 
 The hardlinks file shall contain several lines, each line consisting of a
 list of files sharing the same inode. The first file of a line is used as
-reference file when fixing broken links.
+reference file when fixing broken links or missing files.
 Comments are allowed in the file (whole-line or end-of-line).
 
 Available options:
-    -f|--fix    fix broken hardlinks
-                all files on a line are hardlinked to the line's reference file
-    -q|--quiet  be quiet (return code indicates success/failure)
+    -f|--fix            fix broken hardlinks
+    -m|--fix-missing    fix missing files ; implies --fix
+    -q|--quiet          be quiet (return code indicates success/failure)
 
 Return codes:
-    0           all links ok
-    1           some links broken (fixed with --fix)
-    2           some files missing (not fixed with --fix)
-    3           some reference files missing (not fixed with --fix)
-    10          other error"
+    0       all links ok
+    1       some links broken (fixed with --fix)
+    2       some files missing (fixed with --fix-missing)
+    3       some files not reachable (not fixed)
+    4       some reference files missing (not fixed)
+    10      other error"
     exit
 fi
 
 # Process options
 OPTSDONE=
 FIX=
+FIXMISSING=
 QUIET=
 while [[ -z "$OPTSDONE" ]]
 do
     case "$1" in
         -f|--fix)
+            FIX=true
+            ;;
+
+        -m|--fix-missing)
+            FIXMISSING=true
             FIX=true
             ;;
 
@@ -85,10 +92,20 @@ do
             if [[ $INODE == 0 ]]
             then
                 [[ -z "$QUIET" ]] && echo "Missing reference: $F"
-                rc_incr 3
+                rc_incr 4
                 continue 2
             else
-                [[ -z "$QUIET" ]] && echo "Missing: $F"
+                if [[ -z "$FIX" ]]
+                then
+                    [[ -z "$QUIET" ]] && echo "Missing: $F"
+                elif [[ ! -d "${F%/*}" ]]
+                then
+                    [[ -z "$QUIET" ]] && echo "Unreachable: $F"
+                    rc_incr 3
+                else
+                    ln "$FILE" "$F"
+                    [[ -z "$QUIET" ]] && echo "Fixed missing: $F"
+                fi
                 rc_incr 2
                 continue
             fi
