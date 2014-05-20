@@ -3,6 +3,7 @@
 
 # Source useful functions
 source ${0%/*}/../bash/functions/die
+source ${0%/*}/../bash/functions/tilde
 
 # Check the arguments
 if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
@@ -52,6 +53,10 @@ do
     INODE=0
     for F in $FILES
     do
+        # Check for comments
+        [[ "${F:0:1}" == "#" ]] && break
+        # Perform tilde expansion
+        F=$(tilde $F)
         # Check that the file exists
         if [[ ! -f "$F" ]]
         then
