@@ -1,0 +1,48 @@
+#!/bin/bash
+# bashmod - find and source a Bash "module"
+
+
+# Paths to search for Bash modules
+export BASH_MODULES_PATH
+
+
+function bashmod() {
+    # Help message
+    if [[ $# != 1 || "$1" == "--help" || "$1" == "-h" ]]
+    then
+        echo "  Usage: $FUNCNAME <module name>"
+        echo "Find and source the given Bash module."
+        echo
+        echo "Modules are looked for in directories specified in the"
+        echo "BASH_MODULES_PATH environment variable."
+        return
+    fi
+
+    # Save and alter IFS to parse BASH_MODULES_PATH
+    local OLDIFS="$IFS"
+    IFS=:
+
+    # Loop over the paths to search the module for
+    RC=1
+    for P in $BASH_MODULES_PATH
+    do
+        # Ignore empty and non-existent paths
+        [[ -z "$P" || ! -d "$P" ]] && continue
+        # Look for a script by the name of the module
+        if [[ -f "$P/$1" ]]
+        then
+            # Source it
+            source "$P/$1"
+            # Set status and leave
+            RC=0
+            break
+        fi
+    done
+
+    # Restore IFS
+    IFS="$OLDIFS"
+
+    # Report status
+    return $RC
+}
+
