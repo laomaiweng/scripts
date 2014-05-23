@@ -15,9 +15,16 @@ The (convoluted) solution to this is one more script: ````bash/functions/bashmod
 2. In order to find the external modules required by scripts, ````bashmod```` relies on the _BASH_MODULES_PATH_ environment variable. It must hold a colon-separated list of paths to search for modules.
 3. Bash scripts then call ````$ bashmod <module>```` to have ````bashmod```` search the _BASH_MODULES_PATH_ for the module, and source it if found.
 
-So the minimal setup for Bash scripts to work is:
+However, in an effort to try to keep things simple when scripts/modules are in canonical locations (i.e. inside the repo structure), sensible defaults are used for those environment variables, so that they do not need to be defined.
+
+So the minimal setup for Bash scripts to work **outside of the repo structure** is:
 
 ````bash
 export BASH_MODULES_SCRIPT="/path-to-repo/bash/functions/bashmod"
-export BASH_MODULES_PATH="/path-to-repo/bash/functions"
+````
+
+If you get crazy, like I do, and have several places where modules are defined (e.g. system-, user-, repo-wide), then you'll need to set BASH_MODULES_PATH:
+
+````bash
+export BASH_MODULES_PATH="relpath-to-repo-modules:/path-to-user-modules:/path-to-system-modules"
 ````
