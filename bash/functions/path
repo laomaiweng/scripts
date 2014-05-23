@@ -1,11 +1,11 @@
 #!/bin/bash
-# path - pure-bash function to manipulate path environment variables
+# path - manipulate path environment variables
 
 function path() {
     # No argument: display help
     if [[ $# -lt 1 ]]
     then
-        echo "  Usage: $FUNCNAME <action> [options] <bin|lib|pkc|inc|man> [DIRS]"
+        echo "  Usage: $FUNCNAME <action> [options] <bin|lib|pkc|inc|man|*PATH> [DIRS]"
         echo "Manipulate path environment variables."
         echo
         echo "Actions:"
@@ -21,12 +21,13 @@ function path() {
         echo "  -v|--verbose    print the resulting path"
         echo
         echo "Path variables:"
-        echo "  bin -> PATH"
-        echo "  lib -> LD_LIBRARY_PATH"
-        echo "  pkc -> PKG_CONFIG_PATH"
-        echo "  inc -> C_INCLUDE_PATH"
-        echo "         CPLUS_INCLUDE_PATH"
-        echo "  man -> MANPATH"
+        echo "  bin   -> PATH"
+        echo "  lib   -> LD_LIBRARY_PATH"
+        echo "  pkc   -> PKG_CONFIG_PATH"
+        echo "  inc   -> C_INCLUDE_PATH"
+        echo "           CPLUS_INCLUDE_PATH"
+        echo "  man   -> MANPATH"
+        echo "  *PATH -> itself"
         return
     fi
     local BLACK='\E[0m'           # Not real black: default setting, in fact
@@ -36,7 +37,7 @@ function path() {
     #                 wouldn't want to depend on something like 'sed' when
     #                 the user strips "/usr/bin" from its path
 
-    # Activate extended globbing if needed
+    # Enable extended globbing if needed
     local CLEAR_EXTGLOB=""
     if ! shopt extglob &> /dev/null
     then
@@ -144,28 +145,32 @@ function path() {
         TARGETS="PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH"
     else
         case "$1" in
-            "bin")
-                TARGETS="PATH"
+            bin)
+                TARGETS=PATH
                 ;;
 
-            "lib")
-                TARGETS="LD_LIBRARY_PATH"
+            lib)
+                TARGETS=LD_LIBRARY_PATH
                 ;;
 
-            "pkc")
-                TARGETS="PKG_CONFIG_PATH"
+            pkc)
+                TARGETS=PKG_CONFIG_PATH
                 ;;
 
-            "inc")
+            inc)
                 TARGETS="C_INCLUDE_PATH CPLUS_INCLUDE_PATH"
                 ;;
 
-            "man")
-                TARGETS="MANPATH"
+            man)
+                TARGETS=MANPATH
+                ;;
+
+            *([[:word:]])PATH)
+                TARGETS=$1
                 ;;
 
             *)
-                echo "Error: unknown path variable '$1'!" >&2
+                echo "Error: invalid path variable '$1'!" >&2
                 return 1
                 ;;
         esac
@@ -247,7 +252,7 @@ function path() {
         done
     fi
 
-    # De-activate extended globbing if needed
+    # Disable extended globbing if needed
     if [[ "$CLEAR_EXTGLOB" ]]
     then
         shopt -u extglob
