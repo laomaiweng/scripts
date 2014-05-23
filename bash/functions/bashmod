@@ -23,7 +23,7 @@ function bashmod() {
     IFS=:
 
     # Loop over the paths to search the module for
-    RC=1
+    RC=255
     for P in $BASH_MODULES_PATH
     do
         # Ignore empty and non-existent paths
@@ -42,7 +42,14 @@ function bashmod() {
     # Restore IFS
     IFS="$OLDIFS"
 
-    # Report status
-    return $RC
+    # Not found: fatal
+    if [[ $RC != 0 ]]
+    then
+        # Return if interactive, exit otherwise
+        echo "Error: Bash module '$1' not found in BASH_MODULES_PATH." >&2
+        [[ $- == *i* ]] && return $RC || exit $RC
+    fi
+    # Found: that's fine
+    return 0
 }
 
