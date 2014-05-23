@@ -23,8 +23,9 @@ function bashmod() {
     IFS=:
 
     # Loop over the paths to search the module for
+    # Use bashmod script directory as default value if not defined
     RC=255
-    for P in $BASH_MODULES_PATH
+    for P in ${BASH_MODULES_PATH-${BASH_SOURCE%/*}}
     do
         # Ignore empty and non-existent paths
         [[ -z "$P" || ! -d "$P" ]] && continue
