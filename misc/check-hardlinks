@@ -2,8 +2,11 @@
 # Check whether files that should be hardlinked indeed point to the same inode
 
 
+# Build full name
+[[ "${0:0:1}" == "/" ]] && FULL_0="$0" || FULL_0="$PWD/$0"
+
 # Source required modules (bashmod first, then use it for the others)
-[[ ! -r "${BASH_MODULES_SCRIPT=${0%/*}/../bash/functions/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
+[[ ! -r "${BASH_MODULES_SCRIPT=${FULL_0%/*}/../bash/functions/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
        with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
 source "$BASH_MODULES_SCRIPT"
 bashmod die

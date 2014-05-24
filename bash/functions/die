@@ -6,7 +6,7 @@ function die() {
     local RC=$?
     local PREFIX="Error: "
     local MSG
-    # Parse arguments (don't die on unknown arg, we're already dying)
+    # Parse arguments
     while [[ $# -gt 0 ]]
     do
         case "$1" in
@@ -45,6 +45,7 @@ Options:
                 ;;
 
             *)
+                # Don't die on unknown arg, we're already dying
                 break
                 ;;
         esac
