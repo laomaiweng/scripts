@@ -6,6 +6,7 @@
 # Useful Tcl utilities.                                                     #
 #                                                                           #
 # History:                                                                  #
+# * v1.3    add [dict assign]
 # * v1.2    add [file dereference]                                          #
 #           rename into 'lwutils'                                           #
 #           replace [scriptName] with [info script]                         #
@@ -13,7 +14,7 @@
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide lwutils 1.2.2
+package provide lwutils 1.3.0
 
 
 # Package dependencies
@@ -319,6 +320,38 @@ proc ::lwutils::fileDereference {args} {
 
 # Extend the file ensemble with [file dereference]
 ::lwutils::ensembleExtend file dereference ::lwutils::fileDereference
+
+#############################################################################
+# Assign the value of multiple keys in a dictionary.
+#
+# Arguments:
+#   dict        dictionary value to assign values from
+#   key         key to get from the dictionary
+#   variable    variable name in which to store the value for the key
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return: NONE
+#############################################################################
+proc ::lwutils::dictAssign {dict args} {
+    # Parse the arguments
+    set usage "dict assign dictionaryValue key variable ?key variable ...?"
+    if {([llength $args] < 2) || (([llength $args] % 2) ne 0)} {
+        return -code error "wrong number of arguments: should be \"$usage\""
+    }
+
+    # Loop over the (key,variable) pairs
+    foreach {key variable} $args {
+        # Assign the dict's value for the key to the given caller variable
+        upvar $variable v
+        set v [dict get $dict $key]
+    }
+}
+
+# Extend the dict ensemble with [dict assign]
+::lwutils::ensembleExtend dict assign ::lwutils::dictAssign
 
 
 ################################ End of file ################################
