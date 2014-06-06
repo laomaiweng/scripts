@@ -5,8 +5,16 @@ function path() {
     # No argument: display help
     if [[ $# -lt 1 ]]
     then
-        echo "  Usage: $FUNCNAME <action> [options] <bin|lib|pkc|inc|man|*PATH> [DIRS]"
-        echo "Manipulate path environment variables."
+        echo "  Usage: $FUNCNAME <action> [options] <variable> [DIRS]"
+        echo "Manipulate path-like environment variables."
+        echo
+        echo "Any variable name ending in PATH may be altered."
+        echo "Common path variables are aliased to short names (e.g. bin -> PATH,"
+        echo "lib -> LD_LIBRARY_PATH) for ease of use. These aliases are listed"
+        echo "below."
+        echo "By default, the 'show' action only lists aliased variables. However"
+        echo "each time a non-default variable is altered or shown, it is remembered"
+        echo "and will be displayed upon the next 'show'."
         echo
         echo "Actions:"
         echo "  show            print the path (default action)"
@@ -141,8 +149,8 @@ function path() {
     local TARGETS=""
     if [[ "$ACTIONS" == "show" && -z "$1" ]]
     then
-        # Show: if no specified path variable, show all path variables
-        TARGETS="PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH"
+        # Show: if no specified path variable, show all path variables (including custom ones)
+        TARGETS="PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH ${PATH_CUSTOM_VARIABLES[@]}"
     else
         case "$1" in
             bin)
@@ -167,6 +175,8 @@ function path() {
 
             *([[:word:]])PATH)
                 TARGETS=$1
+                # Remember the variable for later display with 'show' (this is NOT a local variable!)
+                PATH_CUSTOM_VARIABLES+=($1)
                 ;;
 
             *)
