@@ -26,6 +26,7 @@ function path() {
         echo "  -e|--export     export the environment variable"
         echo "  -f|--force      stop complaining about variables"
         echo "                  names not ending in PATH"
+        echo "  -n|--nocolor    don't colorize output"
         echo "  -v|--verbose    print the resulting path"
         echo
         echo "Specific options for action 'show':"
@@ -140,6 +141,11 @@ function path() {
             "g"|"glob")
                 GLOB='true'
                 [[ "$ACTIONS" != "strip" ]] && { echo "Error: invalid option '$OPTION' for action '$SELECTED_ACTION'!" >&2 ; return 1 ; }
+                ;;
+
+            "n"|"nocolor")
+                BLACK=
+                GREEN=
                 ;;
 
             "r"|"reset")
