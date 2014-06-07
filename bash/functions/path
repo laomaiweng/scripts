@@ -8,7 +8,7 @@ function path() {
         echo "  Usage: $FUNCNAME <action> [options] <variable> [DIRS]"
         echo "Manipulate path-like environment variables."
         echo
-        echo "Any variable name ending in PATH may be altered."
+        echo "Any variable with a name ending in PATH may be altered."
         echo "Common path variables are aliased to short names (e.g. bin -> PATH,"
         echo "lib -> LD_LIBRARY_PATH) for ease of use. These aliases are listed"
         echo "below."
@@ -24,6 +24,8 @@ function path() {
         echo
         echo "Generic options:"
         echo "  -e|--export     export the environment variable"
+        echo "  -f|--force      stop complaining about variables"
+        echo "                  names not ending in PATH"
         echo "  -v|--verbose    print the resulting path"
         echo
         echo "Specific options for action 'show':"
@@ -79,6 +81,7 @@ function path() {
 
     # Parse options
     local EXPORT=
+    local FORCE=
     local GLOB=
     local RESET=
     local VERBOSE=
@@ -128,6 +131,10 @@ function path() {
         case "$OPTION" in
             "e"|"export")
                 EXPORT='true'
+                ;;
+
+            "f"|"force")
+                FORCE='true'
                 ;;
 
             "g"|"glob")
@@ -183,26 +190,26 @@ function path() {
                 TARGETS=MANPATH
                 ;;
 
-            *([[:word:]])PATH)
-                TARGETS=$1
-
-                # Look for this path variable in the list of custom path variables
+            *([[:word:]]))
+                # Custom path variable: look for it in the list of custom path variables
                 local FOUND=
                 local K
                 for K in "${!PATH_CUSTOM_VARIABLES[@]}"
                 do
                     # Found it
-                    [[ "${PATH_CUSTOM_VARIABLES[$K]}" == "$TARGETS" ]] && { FOUND="$K" ; break ; }
+                    [[ "${PATH_CUSTOM_VARIABLES[$K]}" == "$1" ]] && { FOUND="$K" ; break ; }
                 done
-                # Check whether the path variable was found
-                if [[ "$FOUND" ]]
-                then
-                    # Forget this path if the --reset option has been given
-                    [[ "$RESET" ]] && unset PATH_CUSTOM_VARIABLES[$FOUND]
-                else
-                    # Remember the variable for later display with 'show' (this is NOT a local variable!)
-                    PATH_CUSTOM_VARIABLES+=("$TARGETS")
-                fi
+
+                # Check that its name ends in PATH, unless forced or already present
+                [[ -z "$FORCE" && -z "$FOUND" && "${1: -4}" != "PATH" ]] && { echo "Error: invalid path variable '$1'!" >&2 ; return 1 ; }
+
+                # Register the target as itself
+                TARGETS=$1
+
+                # If found, forget this variable if the --reset option has been given
+                [[ "$FOUND" && "$RESET" ]] && unset PATH_CUSTOM_VARIABLES[$FOUND]
+                # Otherwise, remember the variable for later display with 'show'
+                [[ -z "$FOUND" ]] && PATH_CUSTOM_VARIABLES+=("$TARGETS")
                 ;;
 
             *)
