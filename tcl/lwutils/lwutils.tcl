@@ -6,7 +6,8 @@
 # Useful Tcl utilities.                                                     #
 #                                                                           #
 # History:                                                                  #
-# * v1.3    add [dict assign]
+# * v1.4    add [foreachelse]                                               #
+# * v1.3    add [dict assign]                                               #
 # * v1.2    add [file dereference]                                          #
 #           rename into 'lwutils'                                           #
 #           replace [scriptName] with [info script]                         #
@@ -14,7 +15,7 @@
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide lwutils 1.3.0
+package provide lwutils 1.4.0
 
 
 # Package dependencies
@@ -352,6 +353,51 @@ proc ::lwutils::dictAssign {dict args} {
 
 # Extend the dict ensemble with [dict assign]
 ::lwutils::ensembleExtend dict assign ::lwutils::dictAssign
+
+#############################################################################
+# Foreach loop with an else body executed when the list is empty.
+# With multiple lists, the else body is executed iff all are empty.
+#
+# Arguments:
+#   varList     list of variable names to assign consecutive elements of the
+#               following list to
+#   list        list to iterate over
+#   body        body to execute for each list element
+#   else body   body to execute if all lists to iterate over are empty
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return: NONE
+#############################################################################
+proc ::lwutils::foreachelse {args} {
+    # Parse the arguments
+    set usage "foreach varList list ?varList list ...? body else body"
+    if {([llength $args] < 5) || (([llength $args] % 2) ne 1) || ([lindex $args end-1] ne "else")} {
+        return -code error "wrong number of arguments: should be \"$usage\""
+    }
+    set pairs [lrange $args 0 end-3]
+    set body [lindex $args end-2]
+    set elsebody [lindex $args end]
+
+    # Test for emptiness
+    set empty 1
+    foreach {v l} $pairs {
+        if {[llength $l]} {
+            # Found a non-empty list: bail out
+            set empty 0
+            break
+        }
+    }
+
+    # Either run the loop or its else body
+    if {$empty} {
+        uplevel 1 $elsebody
+    } else {
+        uplevel 1 [list foreach {*}$pairs $body]
+    }
+}
 
 
 ################################ End of file ################################
