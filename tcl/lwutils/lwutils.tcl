@@ -15,7 +15,7 @@
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide lwutils 1.4.0
+package provide lwutils 1.4.1
 
 
 # Package dependencies
@@ -201,7 +201,7 @@ proc ::lwutils::infoScript {args} {
     }
     array set params [::cmdline::getoptions args $options "$usage\noptions:"]
     if {[llength $args] > 1} {
-        return -code error "wrong number of arguments: should be \"$usage\""
+        return -code error "wrong # args: should be \"$usage\""
     }
 
     # Query mode: use the current script name
@@ -261,7 +261,7 @@ proc ::lwutils::infoPCExists {args} {
     }
     array set params [::cmdline::getoptions args $options "$usage\noptions:"]
     if {[llength $args] ne 1} {
-        return -code error "wrong number of arguments: should be \"$usage\""
+        return -code error "wrong # args: should be \"$usage\""
     }
     lassign $args name
     set testall [expr {!($params(proc) || $params(command))}]
@@ -299,7 +299,7 @@ proc ::lwutils::fileDereference {args} {
     # Parse the arguments
     set usage "file dereference name"
     if {[llength $args] ne 1} {
-        return -code error "wrong number of arguments: should be \"$usage\""
+        return -code error "wrong # args: should be \"$usage\""
     }
     lassign $args name
 
@@ -340,7 +340,7 @@ proc ::lwutils::dictAssign {dict args} {
     # Parse the arguments
     set usage "dict assign dictionaryValue key variable ?key variable ...?"
     if {([llength $args] < 2) || (([llength $args] % 2) ne 0)} {
-        return -code error "wrong number of arguments: should be \"$usage\""
+        return -code error "wrong # args: should be \"$usage\""
     }
 
     # Loop over the (key,variable) pairs
@@ -375,7 +375,7 @@ proc ::lwutils::foreachelse {args} {
     # Parse the arguments
     set usage "foreach varList list ?varList list ...? body else body"
     if {([llength $args] < 5) || (([llength $args] % 2) ne 1) || ([lindex $args end-1] ne "else")} {
-        return -code error "wrong number of arguments: should be \"$usage\""
+        return -code error "wrong # args: should be \"$usage\""
     }
     set pairs [lrange $args 0 end-3]
     set body [lindex $args end-2]
