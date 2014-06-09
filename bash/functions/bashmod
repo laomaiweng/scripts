@@ -5,6 +5,9 @@
 # Paths to search for Bash modules
 export BASH_MODULES_PATH
 
+# Location of this script (for reference in the function, not exported)
+BASH_MODULES_SOURCE="$PWD/$BASH_SOURCE"
+
 
 function bashmod() {
     # Help message
@@ -24,8 +27,9 @@ function bashmod() {
 
     # Loop over the paths to search the module for
     # Use bashmod script directory as default value if not defined
-    RC=255
-    for P in ${BASH_MODULES_PATH-${BASH_SOURCE%/*}}
+    local RC=255
+    local P
+    for P in ${BASH_MODULES_PATH-${BASH_MODULES_SOURCE%/*}}
     do
         # Ignore empty and non-existent paths
         [[ -z "$P" || ! -d "$P" ]] && continue
