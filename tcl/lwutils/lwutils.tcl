@@ -6,6 +6,7 @@
 # Useful Tcl utilities.                                                     #
 #                                                                           #
 # History:                                                                  #
+# * v1.5    update [dict assign] to handle nested dicts                     #
 # * v1.4    add [foreachelse]                                               #
 # * v1.3    add [dict assign]                                               #
 # * v1.2    add [file dereference]                                          #
@@ -15,7 +16,7 @@
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide lwutils 1.4.1
+package provide lwutils 1.5.0
 
 
 # Package dependencies
@@ -323,11 +324,28 @@ proc ::lwutils::fileDereference {args} {
 ::lwutils::ensembleExtend file dereference ::lwutils::fileDereference
 
 #############################################################################
-# Assign the value of multiple keys in a dictionary.
+# Assign the value of multiple key paths in a dictionary.
+#
+# NB: This proc uses key paths: a list of keys, for nested dicts.
+#     This means that even when accessing the first level of the dict, the
+#     given key path arguments must be lists, otherwise single keys that look
+#     like lists will cause an attempt at reaching a nested dict.
+#     E.g.:
+#       $ set d [dict create a A [list b c] "B C"]
+#       > a A {b c} {B C}
+#
+#       $ dict assign $d [list a] va [list [list b c]] vbc
+#       # OK: triggers [dict get $d [list b c]]
+#
+#       $ dict assign $d a va [list b c] vbc
+#       > key "b" not known in dictionary
+#       # KO: triggers [dict get $d b c]
+#       #     works for 'a' though
 #
 # Arguments:
 #   dict        dictionary value to assign values from
-#   key         key to get from the dictionary
+#   keyPath     dictionary key path to the value to get (each item is the
+#               list goes one nested dict deeper: 
 #   variable    variable name in which to store the value for the key
 #
 # Globals: NONE
@@ -338,16 +356,16 @@ proc ::lwutils::fileDereference {args} {
 #############################################################################
 proc ::lwutils::dictAssign {dict args} {
     # Parse the arguments
-    set usage "dict assign dictionaryValue key variable ?key variable ...?"
+    set usage "dict assign dictionaryValue keyPath variable ?keyPath variable ...?"
     if {([llength $args] < 2) || (([llength $args] % 2) ne 0)} {
         return -code error "wrong # args: should be \"$usage\""
     }
 
     # Loop over the (key,variable) pairs
-    foreach {key variable} $args {
+    foreach {keypath variable} $args {
         # Assign the dict's value for the key to the given caller variable
         upvar $variable v
-        set v [dict get $dict $key]
+        set v [dict get $dict {*}$keypath]
     }
 }
 
