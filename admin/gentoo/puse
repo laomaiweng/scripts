@@ -47,7 +47,7 @@ namespace import ::lwutils::die ::lwutils::lremove ::lwutils::reEscape
 #############################################################################
 
 # Version number
-set version "0.3"
+set version "0.3.1"
 
 # Operating mode (set by [SetupMode])
 set mode ""
@@ -497,16 +497,18 @@ proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar
     upvar 1 $atomVar atom $flagAlignVar flagAlign $flagsVar flags $commentVar comment $comAlignVar comAlign
 
     # Parse the package line and fill in the variables
+    set flagAlign -1
+    set flags {}
     if {$hasflags} {
         # Parse with flags (at least one)
         set parse [regexp -- {^(([^#[:space:]]+)\s*)((?:\s[^#[:space:]]+\s*)+)(?:\s# ?(.*))?$} $line -> flagAlign atom flags comment]
-        set flagAlign [string length "$flagAlign "]     ;# Must add a space as there's one that's matched with the first flag
-        set flags [lassign $flags]
+        if {$parse} {
+            set flagAlign [string length "$flagAlign "]     ;# Must add a space as there's one that's matched with the first flag
+            set flags [lassign $flags]
+        }
     } else {
         # Parse without flags
         set parse [regexp -- {^([^#[:space:]]+)(?:\s+# ?(.*))?$} $line -> atom comment]
-        set flagAlign -1
-        set flags {}
     }
     set comAlign [string first # $line]
 
@@ -517,6 +519,8 @@ proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar
 #############################################################################
 # Choose an alignment value from a list of candidates. If no candidate is
 # available or if none is fitting, compute an alignment as a multiple of n.
+# The returned alignment is guaranteed to leave at least 1 space after the
+# base length.
 #
 # Arguments:
 #   base            base length after which to align
@@ -755,10 +759,10 @@ if {[llength $iline] > 1} {
         set comAlign [ChooseAlignment [expr {$flagAlign+[string length [join $flags]]}] $blockComAlign]
 
         # Build the new line
-        set nline [expr {$hasflags ? "[string pad $atom $flagAlign][join $flags]" : $atom}]
+        set nline [expr {$hasflags ? "[string pad $atom $flagAlign " " 1][join $flags]" : $atom}]
         # Append the comment, if any
         if {$commentset && $comment ne ""} {
-            set nline "[string pad $nline $comAlign]# $comment"
+            set nline "[string pad $nline $comAlign " " 1]# $comment"
         }
 
         # Insert it in the file
@@ -778,7 +782,7 @@ if {[llength $iline] > 1} {
     # Check whether any flags remain
     if {[llength $flags]} {
         # Rebuild the line
-        set nline [string pad $atom $flagAlign][join $flags]
+        set nline [string pad $atom $flagAlign " " 1][join $flags]
 
         # Process the comment
         if {$commentset} {
@@ -794,8 +798,8 @@ if {[llength $iline] > 1} {
             if {$comAlign eq -1} {
                 set comAlign [ChooseAlignment [string length $nline] $blockComAlign]
             }
-            # Append the comment
-            set nline "[string pad $nline $comAlign]# $comment"
+            # Append the comment (make sure there's at least 1 space before the comment)
+            set nline "[string pad $nline $comAlign " " 1]# $comment"
         }
 
         # Put the new line back in the file
