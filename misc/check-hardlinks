@@ -112,16 +112,16 @@ do
                     rc_incr 4
                     continue 2
                 else
-                    if [[ -z "$FIX" ]]
+                    if [[ -z "$FIXMISSING" ]]
                     then
-                        [[ -z "$QUIET" ]] && echo "Missing: $F"
+                        [[ -z "$QUIET" ]] && echo "Missing file: $F"
                     elif [[ ! -d "${F%/*}" ]]
                     then
-                        [[ -z "$QUIET" ]] && echo "Unreachable: $F"
+                        [[ -z "$QUIET" ]] && echo "Unreachable file: $F"
                         rc_incr 3
                     else
                         ln "$FILE" "$F"
-                        [[ -z "$QUIET" ]] && echo "Fixed missing: $F"
+                        [[ -z "$QUIET" ]] && echo "Fixed missing file: $F"
                     fi
                     rc_incr 2
                     continue
