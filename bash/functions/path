@@ -24,7 +24,7 @@ function path() {
         echo
         echo "Generic options:"
         echo "  -e|--export     export the environment variable"
-        echo "  -f|--force      stop complaining about variables"
+        echo "  -f|--force      stop complaining about variable"
         echo "                  names not ending in PATH"
         echo "  -n|--nocolor    don't colorize output"
         echo "  -v|--verbose    print the resulting path"
@@ -43,6 +43,7 @@ function path() {
         echo "           CPLUS_INCLUDE_PATH"
         echo "  man   -> MANPATH"
         echo "  *PATH -> itself"
+        echo "  '*'   -> all variables listed by 'show'"
         return
     fi
     local BLACK='\E[0m'           # Not real black: default setting, in fact
@@ -216,6 +217,10 @@ function path() {
                 [[ "$FOUND" && "$RESET" ]] && unset PATH_CUSTOM_VARIABLES[$FOUND]
                 # Otherwise, remember the variable for later display with 'show'
                 [[ -z "$FOUND" ]] && PATH_CUSTOM_VARIABLES+=("$TARGETS")
+                ;;
+
+            '*')
+                TARGETS="PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH ${PATH_CUSTOM_VARIABLES[@]}"
                 ;;
 
             *)
