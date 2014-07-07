@@ -6,6 +6,7 @@
 # Useful Tcl utilities.                                                     #
 #                                                                           #
 # History:                                                                  #
+# * v1.6    add [string sequence]                                           #
 # * v1.5    update [dict assign] to handle nested dicts                     #
 # * v1.4    add [foreachelse]                                               #
 # * v1.3    add [dict assign]                                               #
@@ -16,7 +17,7 @@
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide lwutils 1.5.0
+package provide lwutils 1.6.0
 
 
 # Package dependencies
@@ -416,6 +417,45 @@ proc ::lwutils::foreachelse {args} {
         uplevel 1 [list foreach {*}$pairs $body]
     }
 }
+
+#############################################################################
+# Generate a sequence of characters, using the given first and last
+# characters.
+#
+# Arguments:
+#   first       first character in the sequence
+#   last        last character in the sequence
+#   incr        character increment (default: 1)
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   list of characters
+#############################################################################
+proc ::lwutils::stringSequence {first last {incr 1}} {
+    # Test for invalid increment
+    if {$incr eq 0} {
+        return -code error "null increment"
+    }
+
+    # Get the first and last characters as integers
+    scan ${first}${last} %c%c ifirst ilast
+
+    # Loop from first to last character
+    set sequence {}
+    set loop [expr {$incr > 0 ? {$i <= $ilast} : {$i >= $ilast}}]
+    for {set i $ifirst} $loop {incr i $incr} {
+        lappend sequence [format %c $i]
+    }
+
+    # Return the result
+    return $sequence
+}
+
+# Extend the info ensemble with [string sequence]
+::lwutils::ensembleExtend string sequence ::lwutils::stringSequence
 
 
 ################################ End of file ################################
