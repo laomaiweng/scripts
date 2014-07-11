@@ -6,7 +6,7 @@
 export BASH_MODULES_PATH
 
 # Location of this script (for reference in the function, not exported)
-BASH_MODULES_SOURCE="$PWD/$BASH_SOURCE"
+[[ "${BASH_SOURCE:0:1}" == "/" ]] && BASH_MODULES_SOURCE="$BASH_SOURCE" || BASH_MODULES_SOURCE="$PWD/$BASH_SOURCE"
 
 
 function bashmod() {
