@@ -41,6 +41,7 @@ Return codes:
     2       some files missing (fixed with --fix-missing)
     3       some files not reachable (not fixed)
     4       some reference files missing (not fixed)
+    5       some files diverged (not fixed)
     10      other error"
     exit
 fi
@@ -90,9 +91,8 @@ done
 # For each hardlinks file
 while [[ $# != 0 ]]
 do
-    # Test the hardlinks file
-    # Read the hardlinks file line by line
     RC=0
+    # Read the hardlinks file line by line
     while read FILES
     do
         # Check that all files on a single line share the same inode
@@ -110,7 +110,7 @@ do
                 then
                     [[ -z "$QUIET" ]] && echo "Missing reference: $F"
                     rc_incr 4
-                    continue 2
+                    break
                 else
                     if [[ -z "$FIXMISSING" ]]
                     then
@@ -124,8 +124,8 @@ do
                         [[ -z "$QUIET" ]] && echo "Fixed missing file: $F"
                     fi
                     rc_incr 2
-                    continue
                 fi
+                continue
             fi
             # Get the file's inode
             IF=$(stat -c %i "$F")
@@ -134,19 +134,27 @@ do
             then
                 FILE=$F
                 INODE=$IF
-            # If inodes do not match, print an error
+            # Check against the inode of the reference file
             elif [[ $INODE != $IF ]]
             then
-                if [[ -z "$FIX" ]]
+                # Inodes do not match: check whether the files are different
+                if diff -q "$FILE" "$F" &> /dev/null
                 then
-                    [[ -z "$QUIET" ]] && echo "Broken hardlink: $FILES"
+                    # Files are identical, that's simply a broken hardlink
+                    if [[ -z "$FIX" ]]
+                    then
+                        [[ -z "$QUIET" ]] && echo "Broken hardlink: $FILES"
+                    else
+                        rm "$F"
+                        ln "$FILE" "$F"
+                        [[ -z "$QUIET" ]] && echo "Fixed broken hardlink: $FILES"
+                    fi
+                    rc_incr 1
                 else
-                    rm "$F"
-                    ln "$FILE" "$F"
-                    [[ -z "$QUIET" ]] && echo "Fixed broken hardlink: $FILES"
+                    # Files are different, report this
+                    [[ -z "$QUIET" ]] && echo "Diverged files: $FILES"
+                    rc_incr 5
                 fi
-                rc_incr 1
-                break
             fi
         done
     done < "$1"
