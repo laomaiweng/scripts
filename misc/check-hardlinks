@@ -17,6 +17,10 @@ bashmod tilde
 function rc_incr() { # 1:target_rc
     [[ $RC -lt $1 ]] && RC=$1
 }
+# printa: print an  aligned message about some checked files
+function printa() { # 1:message 2:files
+    printf "%-23s %s\n" "$1" "$2"
+}
 
 # Check the arguments
 if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
@@ -108,20 +112,20 @@ do
             then
                 if [[ $INODE == 0 ]]
                 then
-                    [[ -z "$QUIET" ]] && echo "Missing reference: $F"
+                    [[ -z "$QUIET" ]] && printa "Missing reference:" "$F"
                     rc_incr 4
                     break
                 else
                     if [[ -z "$FIXMISSING" ]]
                     then
-                        [[ -z "$QUIET" ]] && echo "Missing file: $F"
+                        [[ -z "$QUIET" ]] && printa "Missing file:" "$F"
                     elif [[ ! -d "${F%/*}" ]]
                     then
-                        [[ -z "$QUIET" ]] && echo "Unreachable file: $F"
+                        [[ -z "$QUIET" ]] && printa "Unreachable file:" "$F"
                         rc_incr 3
                     else
                         ln "$FILE" "$F"
-                        [[ -z "$QUIET" ]] && echo "Fixed missing file: $F"
+                        [[ -z "$QUIET" ]] && printa "Fixed missing file:" "$F"
                     fi
                     rc_incr 2
                 fi
@@ -143,16 +147,16 @@ do
                     # Files are identical, that's simply a broken hardlink
                     if [[ -z "$FIX" ]]
                     then
-                        [[ -z "$QUIET" ]] && echo "Broken hardlink: $FILES"
+                        [[ -z "$QUIET" ]] && printa "Broken hardlink:" "$FILES"
                     else
                         rm "$F"
                         ln "$FILE" "$F"
-                        [[ -z "$QUIET" ]] && echo "Fixed broken hardlink: $FILES"
+                        [[ -z "$QUIET" ]] && printa "Fixed broken hardlink:" "$FILES"
                     fi
                     rc_incr 1
                 else
                     # Files are different, report this
-                    [[ -z "$QUIET" ]] && echo "Diverged files: $FILES"
+                    [[ -z "$QUIET" ]] && printa "Diverged files:" "$FILES"
                     rc_incr 5
                 fi
             fi
