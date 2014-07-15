@@ -19,13 +19,17 @@ function rc_incr() { # 1:target_rc
 }
 # printcheck: print an aligned message about some checked files
 function printcheck() { # 1:status 2:message 3:files
-    local BLACK='\E[0m'         # Not real black: default setting, in fact
-    local GREEN='\E[1;32;32m'   # Bold green color
-    local RED='\E[1;31;31m'     # Bold red color
-    local ALIGN=23              # Message alignment
+    local ALIGN=23                  # Message alignment
 
-    local COLOR="$BLACK"
-    [[ $1 -eq 0 ]] && COLOR="$GREEN" || COLOR="$RED"
+    if [[ -z "$NOCOLORS" ]]
+    then
+        local BLACK='\E[0m'         # Not real black: default setting, in fact
+        local GREEN='\E[1;32;32m'   # Bold green color
+        local RED='\E[1;31;31m'     # Bold red color
+
+        local COLOR="$BLACK"
+        [[ $1 -eq 0 ]] && COLOR="$GREEN" || COLOR="$RED"
+    fi
 
     printf "[${COLOR}*${BLACK}] %-${ALIGN}s %s\n" "$2" "$3"
 }
@@ -43,6 +47,7 @@ reference file when fixing broken links or missing files.
 Hardlinks files may contain comments (whole-line or end-of-line).
 
 Available options:
+    -c|--no-colors      disable colors in the output
     -f|--fix            fix broken hardlinks
     -m|--fix-missing    fix missing files ; implies --fix
     -q|--quiet          be quiet (return code indicates success/failure)
@@ -60,12 +65,17 @@ fi
 
 # Process options
 OPTSDONE=
+NOCOLORS=
 FIX=
 FIXMISSING=
 QUIET=
 while [[ -z "$OPTSDONE" ]]
 do
     case "$1" in
+        -c|--no-colors)
+            NOCOLORS=true
+            ;;
+
         -f|--fix)
             FIX=true
             ;;
