@@ -1,6 +1,10 @@
 #!/bin/bash
 # path - manipulate path environment variables
 
+# Enable extended globbing, never disable it (why was it disabled in the first place anyway?)
+shopt -s extglob
+
+
 function path() {
     # No argument: display help
     if [[ $# -lt 1 ]]
@@ -53,13 +57,8 @@ function path() {
     #                 wouldn't want to depend on something like 'sed' when
     #                 the user strips "/usr/bin" from its path
 
-    # Enable extended globbing if needed
-    local CLEAR_EXTGLOB=
-    if ! shopt extglob &> /dev/null
-    then
-        CLEAR_EXTGLOB='true'
-        shopt -s extglob
-    fi
+    # Enable extended globbing *again* (in case it was malevolently disabled)
+    shopt -s extglob
 
     # Get action from arguments
     local SELECTED_ACTION="$1"
@@ -311,12 +310,6 @@ function path() {
         do
             echo -e "${GREEN}$T =${BLACK} ${!T}"
         done
-    fi
-
-    # Disable extended globbing if needed
-    if [[ "$CLEAR_EXTGLOB" ]]
-    then
-        shopt -u extglob
     fi
 }
 

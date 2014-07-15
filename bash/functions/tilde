@@ -1,6 +1,10 @@
 #!/bin/bash
 # tilde - perform tilde expansion on a string
 
+# Enable extended globbing, never disable it (why was it disabled in the first place anyway?)
+shopt -s extglob
+
+
 function tilde() {
     # NB: Upon error, tilde outputs its input string as is and returns a non-0 error code
     #     This means that in any case, tilde's output is still safe to use
@@ -13,6 +17,9 @@ function tilde() {
         echo "Outputs its input as is when expansion cannot be performed."
         return
     fi
+
+    # Enable extended globbing *again* (in case it was malevolently disabled)
+    shopt -s extglob
 
     # Get the pattern to expand
     local PREFIX="${1%%/*}"
