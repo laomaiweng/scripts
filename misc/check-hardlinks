@@ -17,9 +17,17 @@ bashmod tilde
 function rc_incr() { # 1:target_rc
     [[ $RC -lt $1 ]] && RC=$1
 }
-# printa: print an  aligned message about some checked files
-function printa() { # 1:message 2:files
-    printf "%-23s %s\n" "$1" "$2"
+# printcheck: print an aligned message about some checked files
+function printcheck() { # 1:status 2:message 3:files
+    local BLACK='\E[0m'         # Not real black: default setting, in fact
+    local GREEN='\E[1;32;32m'   # Bold green color
+    local RED='\E[1;31;31m'     # Bold red color
+    local ALIGN=23              # Message alignment
+
+    local COLOR="$BLACK"
+    [[ $1 -eq 0 ]] && COLOR="$GREEN" || COLOR="$RED"
+
+    printf "[${COLOR}*${BLACK}] %-${ALIGN}s %s\n" "$2" "$3"
 }
 
 # Check the arguments
@@ -101,31 +109,31 @@ do
     do
         # Check that all files on a single line share the same inode
         INODE=0
-        for F in $FILES
+        for FN in $FILES
         do
             # Check for comments
-            [[ "${F:0:1}" == "#" ]] && break
+            [[ "${FN:0:1}" == "#" ]] && break
             # Perform tilde expansion
-            F=$(tilde $F)
+            F="$(tilde "$FN")"
             # Check that the file exists
             if [[ ! -f "$F" ]]
             then
                 if [[ $INODE == 0 ]]
                 then
-                    [[ -z "$QUIET" ]] && printa "Missing reference:" "$F"
+                    [[ -z "$QUIET" ]] && printcheck 1 "Missing reference:" "$FN"
                     rc_incr 4
                     break
                 else
                     if [[ -z "$FIXMISSING" ]]
                     then
-                        [[ -z "$QUIET" ]] && printa "Missing file:" "$F"
+                        [[ -z "$QUIET" ]] && printcheck 1 "Missing file:" "$FN"
                     elif [[ ! -d "${F%/*}" ]]
                     then
-                        [[ -z "$QUIET" ]] && printa "Unreachable file:" "$F"
+                        [[ -z "$QUIET" ]] && printcheck 1 "Unreachable file:" "$FN"
                         rc_incr 3
                     else
                         ln "$FILE" "$F"
-                        [[ -z "$QUIET" ]] && printa "Fixed missing file:" "$F"
+                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed missing file:" "$FN"
                     fi
                     rc_incr 2
                 fi
@@ -136,7 +144,8 @@ do
             # Take the path and inode of the first file as a reference
             if [[ $INODE == 0 ]]
             then
-                FILE=$F
+                FILE="$F"
+                FILEN="$FN"
                 INODE=$IF
             # Check against the inode of the reference file
             elif [[ $INODE != $IF ]]
@@ -147,16 +156,16 @@ do
                     # Files are identical, that's simply a broken hardlink
                     if [[ -z "$FIX" ]]
                     then
-                        [[ -z "$QUIET" ]] && printa "Broken hardlink:" "$FILES"
+                        [[ -z "$QUIET" ]] && printcheck 1 "Broken hardlink:" "$FILES"
                     else
                         rm "$F"
                         ln "$FILE" "$F"
-                        [[ -z "$QUIET" ]] && printa "Fixed broken hardlink:" "$FILES"
+                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed broken hardlink:" "$FILES"
                     fi
                     rc_incr 1
                 else
                     # Files are different, report this
-                    [[ -z "$QUIET" ]] && printa "Diverged files:" "$FILES"
+                    [[ -z "$QUIET" ]] && printcheck 1 "Diverged files:" "$FILES"
                     rc_incr 5
                 fi
             fi
@@ -166,7 +175,7 @@ do
     shift
 done
 # Display something if all went good
-[[ -z "$QUIET" && $RC == 0 ]] && echo "All good."
+[[ -z "$QUIET" && $RC == 0 ]] && printcheck 0 "All good."
 
 # Return the resulting return code
 exit $RC
