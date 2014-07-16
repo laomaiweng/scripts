@@ -47,7 +47,7 @@ namespace import ::lwutils::die ::lwutils::lremove ::lwutils::reEscape
 #############################################################################
 
 # Version number
-set version "0.3.1"
+set version "0.3.2"
 
 # Operating mode (set by [SetupMode])
 set mode ""
@@ -81,16 +81,16 @@ set query ""
 # Boolean holding whether only queries were done (no set/unset/reset)
 set queryonly true
 
-# DEPEND atom regexps (see PMS EAPI 5 and ebuild(5) for specification)
+# DEPEND atom regexps (see PMS and ebuild(5) for specification)
 set constraint_rx   {(?:<|<=|=|>=|>|~)}
-set category_rx     {(?:[a-zA-Z0-9_][a-zA-Z0-9_+.-]*)}
-set package_rx      {(?:[a-zA-Z0-9_][a-zA-Z0-9_+]*(?:-(?:[a-zA-Z0-9_+]*-)*[a-zA-Z_+]*)?)}
+set category_rx     {(?:[A-Za-z0-9_][A-Za-z0-9+_.-]*)}
+set package_rx      {(?:[A-Za-z0-9_][A-Za-z0-9+_]*(?:-(?:[A-Za-z0-9+_]*-)*[A-Za-z+_]*)?)}
 set version_rx      {(?:[0-9]+(?:\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?)}
 set revision_rx     {(?:r[0-9]+)}
-set slot_rx         {(?::(?:[0-9]|[0-9][0-9.]*[0-9]))}
+set slot_rx         {(?::(?:[A-Za-z0-9_]|[A-Za-z0-9+_.-]*)(?:/(?:[A-Za-z0-9_]|[A-Za-z0-9+_.-]*))?)}
 set postfix_rx      {(?:\*)}
-set use_rx          {(?:[a-zA-Z0-9][a-zA-Z0-9@_+-]*)}
-set keyword_rx      {(?:~?[a-zA-Z0-9_][a-zA-Z0-9_-]*)}
+set use_rx          {(?:[A-Za-z0-9][A-Za-z0-9+_@-]*)}
+set keyword_rx      {(?:~?[A-Za-z0-9_][A-Za-z0-9_-]*)}
 set license_rx      {(?:[[:graph:]]+)}
 
 
