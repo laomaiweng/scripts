@@ -43,13 +43,14 @@ Check the consistency of hardlinks described in the given hardlinks files.
 
 A hardlinks file shall contain several lines, each line consisting of a
 list of files sharing the same inode. The first file on a line is used as
-reference file when fixing broken links or missing files.
+reference file when fixing broken links and diverged or missing files.
 Hardlinks files may contain comments (whole-line or end-of-line).
 
 Available options:
     -c|--no-colors      disable colors in the output
+    -d|--fix-diverged   fix diverged files (/!\\ USE WITH CAUTION /!\\)
     -f|--fix            fix broken hardlinks
-    -m|--fix-missing    fix missing files ; implies --fix
+    -m|--fix-missing    fix missing files
     -q|--quiet          be quiet (return code indicates success/failure)
 
 Return codes:
@@ -58,7 +59,7 @@ Return codes:
     2       some files missing (fixed with --fix-missing)
     3       some files not reachable (not fixed)
     4       some reference files missing (not fixed)
-    5       some files diverged (not fixed)
+    5       some files diverged (fixed with --fix-diverged)
     10      other error"
     exit
 fi
@@ -68,6 +69,7 @@ OPTSDONE=
 NOCOLORS=
 FIX=
 FIXMISSING=
+FIXDIVERGED=
 QUIET=
 while [[ -z "$OPTSDONE" ]]
 do
@@ -76,13 +78,16 @@ do
             NOCOLORS=true
             ;;
 
+        -d|--fix-diverged)
+            FIXDIVERGED=true
+            ;;
+
         -f|--fix)
             FIX=true
             ;;
 
         -m|--fix-missing)
             FIXMISSING=true
-            FIX=true
             ;;
 
         -q|--quiet)
@@ -174,8 +179,15 @@ do
                     fi
                     rc_incr 1
                 else
-                    # Files are different, report this
-                    [[ -z "$QUIET" ]] && printcheck 1 "Diverged files:" "$FILES"
+                    # Files have diverged
+                    if [[ -z "$FIXDIVERGED" ]]
+                    then
+                        [[ -z "$QUIET" ]] && printcheck 1 "Diverged files:" "$FILES"
+                    else
+                        rm "$F"
+                        ln "$FILE" "$F"
+                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed diverged files:" "$FILES"
+                    fi
                     rc_incr 5
                 fi
             fi
