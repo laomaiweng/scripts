@@ -1,13 +1,17 @@
 #############################################################################
 #   debug.tcl                                                               #
 #                                                                           #
-# Author: quentin <quentin@minster.io>                                      #
+# Author: laomaiweng <laomaiweng AT minster DOT io>                         #
 #                                                                           #
 # Useful procedures for debugging Tcl code.                                 #
 # Procedures get nopped if environment variable TCL_DEBUG is unset.         #
+#                                                                           #
+# History:                                                                  #
+# * v1.1    add [step] and [interact]
+# * v1.0    initial version                                                 #
 #############################################################################
 
-package provide debug 1.0
+package provide debug 1.1
 
 
 # Define the debug namespace
@@ -71,6 +75,62 @@ proc ::debug::stacktrace {} {
         append stack \n
     }
     return $stack
+}
+
+#############################################################################
+# Turn on stepping for a procedure.
+#
+# Borrowed from:
+#   https://en.wikibooks.org/wiki/Tcl_Programming/Debugging
+#
+# Arguments:
+#   proc    name of the proc to instrument
+#   yesno   whether to enable or disable stepping
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return: NONE
+#############################################################################
+proc ::debug::step {proc {yesno 1}} {
+    # Add/remove a trace on the proc's execution
+    set mode [expr {$yesno? "add" : "remove"}]
+    trace $mode execution $proc {enterstep leavestep} ::debug::interact
+}
+
+#############################################################################
+# Stepping callback for a running procedure.
+# Stepping must have been enabled on the procedure with the [step] proc.
+#
+# Borrowed from:
+#   https://en.wikibooks.org/wiki/Tcl_Programming/Debugging
+#
+# Arguments:
+#   args    arguments provided by the trace
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return: NONE
+#############################################################################
+proc ::debug::interact {args} {
+    # Handle the leavestep
+    if {[lindex $args end] eq "leavestep"} {
+        puts "==>[lindex $args 2]"
+        return
+    }
+    # Any other step: process user input
+    puts -nonewline "$args --"
+    while 1 {
+        puts -nonewline "> "
+        flush stdout
+        gets stdin cmd
+        if {$cmd eq "c" || $cmd eq ""} break
+        catch {uplevel 1 $cmd} res
+        if {[string length $res]} {puts $res}
+    }
 }
 
 

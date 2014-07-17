@@ -2,7 +2,7 @@
 # gpg-agent-test - test for a running GPG agent
 
 function gpg-agent-test() {
-    [[ $# -ne 1 ]] && { echo "Usage: gpg-agent-test <env-file>" >&2 ; return 1 ; }
+    [[ $# -ne 1 ]] && { echo "Usage: $FUNCNAME <env-file>" >&2 ; return 1 ; }
 
     local GPG_AGENT_BINARY=/usr/bin/gpg-agent
     local GPG_AGENT_ENVFILE="$1"

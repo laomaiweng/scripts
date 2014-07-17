@@ -1,12 +1,24 @@
 #!/bin/bash
-# path - pure-bash function to manipulate path environment variables
+# path - manipulate path environment variables
+
+# Enable extended globbing, never disable it (why was it disabled in the first place anyway?)
+shopt -s extglob
+
 
 function path() {
     # No argument: display help
     if [[ $# -lt 1 ]]
     then
-        echo "  Usage: path <action> [options] <bin|lib|pkc|inc|man> [DIRS]"
-        echo "Manipulate path environment variables."
+        echo "  Usage: $FUNCNAME <action> [options] <variable> [DIRS]"
+        echo "Manipulate path-like environment variables."
+        echo
+        echo "Any variable with a name ending in PATH may be altered."
+        echo "Common path variables are aliased to short names (e.g. bin -> PATH,"
+        echo "lib -> LD_LIBRARY_PATH) for ease of use. These aliases are listed"
+        echo "below."
+        echo "By default, the 'show' action only lists aliased variables. However"
+        echo "each time a non-default variable is altered or shown, it is remembered"
+        echo "and will be displayed upon the next 'show'."
         echo
         echo "Actions:"
         echo "  show            print the path (default action)"
@@ -14,19 +26,28 @@ function path() {
         echo "  prepend         prepend DIRS to the path"
         echo "  strip           strip DIRS from the path"
         echo
-        echo "Options:"
-        echo "  -g|--glob       when stripping, also strip when only"
-        echo "                  part of an entry is matched"
+        echo "Generic options:"
         echo "  -e|--export     export the environment variable"
+        echo "  -f|--force      stop complaining about variable"
+        echo "                  names not ending in PATH"
+        echo "  -n|--nocolor    don't colorize output"
         echo "  -v|--verbose    print the resulting path"
         echo
+        echo "Specific options for action 'show':"
+        echo "  -r|--reset      forget non-default variables"
+        echo
+        echo "Specific options for action 'strip':"
+        echo "  -g|--glob       also strip when only part of an entry is matched"
+        echo
         echo "Path variables:"
-        echo "  bin -> PATH"
-        echo "  lib -> LD_LIBRARY_PATH"
-        echo "  pkc -> PKG_CONFIG_PATH"
-        echo "  inc -> C_INCLUDE_PATH"
-        echo "         CPLUS_INCLUDE_PATH"
-        echo "  man -> MANPATH"
+        echo "  bin   -> PATH"
+        echo "  lib   -> LD_LIBRARY_PATH"
+        echo "  pkc   -> PKG_CONFIG_PATH"
+        echo "  inc   -> C_INCLUDE_PATH"
+        echo "           CPLUS_INCLUDE_PATH"
+        echo "  man   -> MANPATH"
+        echo "  *PATH -> itself"
+        echo "  '*'   -> all variables listed by 'show'"
         return
     fi
     local BLACK='\E[0m'           # Not real black: default setting, in fact
@@ -36,136 +57,173 @@ function path() {
     #                 wouldn't want to depend on something like 'sed' when
     #                 the user strips "/usr/bin" from its path
 
-    # Activate extended globbing if needed
-    local CLEAR_EXTGLOB=""
-    if ! shopt extglob &> /dev/null
-    then
-        CLEAR_EXTGLOB='true'
-        shopt -s extglob
-    fi
+    # Enable extended globbing *again* (in case it was malevolently disabled)
+    shopt -s extglob
 
     # Get action from arguments
-    local ACTIONS="$1"
-    case "$ACTIONS" in
-        "show"|"append"|"prepend"|"strip")
+    local SELECTED_ACTION="$1"
+    local ACTIONS=
+    case "$SELECTED_ACTION" in
+        "show"|"strip")
+            ACTIONS="$SELECTED_ACTION"
+            ;;
+
+        "append"|"prepend")
+            # Add 'strip' action before 'prepend' or 'append' to make sure DIRS are not in the path anymore
+            ACTIONS="strip $SELECTED_ACTION"
             ;;
 
         *)
-            echo "Error: unknown action '$1'!" >&2
+            echo "Error: unknown action '$SELECTED_ACTION'!" >&2
             return 1
             ;;
     esac
     shift
 
-    # Add 'strip' action before 'prepend' or 'append' to make sure DIRS are not in the path anymore
-    [[ "$ACTIONS" == "prepend" || "$ACTIONS" == "append" ]] && ACTIONS="strip $ACTIONS"
-
     # Parse options
-    local VERBOSE=''
-    local EXPORT=''
-    local GLOB=''
-    local OPTS_DONE=''
+    local EXPORT=
+    local FORCE=
+    local GLOB=
+    local RESET=
+    local VERBOSE=
+    local OPTS_DONE=
     until [[ "$OPTS_DONE" ]]
     do
+        # Extract option
+        local OPTION='ERROR'
         case "$1" in
-            # Long options
+            # Long option
             --*)
-                case "$1" in
-                    "--verbose")
-                        VERBOSE='true'
-                        ;;
-
-                    "--export")
-                        EXPORT='true'
-                        ;;
-
-                    "--globbing")
-                        GLOB='true'
-                        ;;
-
-                    "--")
-                        OPTS_DONE='true'
-                        ;;
-
-                    *)
-                        echo "Error: unkown option '$1'!" >&2
-                        return 1
-                        ;;
-                esac
+                # Extract the option name
+                OPTION="${1:2}"
                 shift
                 ;;
 
-            # Short options
+            # Short option
             -*)
+                # Test for empty option
                 if [[ "$1" == "-" ]]
                 then
                     echo "Error: empty option flag '$1'!" >&2
                     return 1
                 fi
 
-                local SHORT_OPTS="${1#-}"
-                while [[ "$SHORT_OPTS" ]]
-                do
-                    case "${SHORT_OPTS::1}" in
-                        v)
-                            VERBOSE='true'
-                            ;;
-
-                        e)
-                            EXPORT='true'
-                            ;;
-
-                        g)
-                            GLOB='true'
-                            ;;
-
-                        *)
-                            echo "Error: unkown option '${SHORT_OPTS::1}'!" >&2
-                            return 1
-                            ;;
-                    esac
-                    SHORT_OPTS="${SHORT_OPTS#${SHORT_OPTS::1}}"
-                done
-                shift
+                # Extract the option short name
+                OPTION="${1:1:1}"
+                # Test if any options are left
+                if [[ -z "${1:2}" ]]
+                then
+                    # No more options here: shift
+                    shift
+                else
+                    # Reset the positional parameters without the current option
+                    set - "-${1:2}" "${@:2}"
+                    # Don't shift yet
+                fi
                 ;;
 
-            # No options
+            # Not an option
             *)
+                OPTION=
+                ;;
+        esac
+
+        # Process option
+        case "$OPTION" in
+            "e"|"export")
+                EXPORT='true'
+                ;;
+
+            "f"|"force")
+                FORCE='true'
+                ;;
+
+            "g"|"glob")
+                GLOB='true'
+                [[ "$ACTIONS" != "strip" ]] && { echo "Error: invalid option '$OPTION' for action '$SELECTED_ACTION'!" >&2 ; return 1 ; }
+                ;;
+
+            "n"|"nocolor")
+                BLACK=
+                GREEN=
+                ;;
+
+            "r"|"reset")
+                RESET='true'
+                [[ "$ACTIONS" != "show" ]] && { echo "Error: invalid option '$OPTION' for action '$SELECTED_ACTION'!" >&2 ; return 1 ; }
+                ;;
+
+            "v"|"verbose")
+                VERBOSE='true'
+                ;;
+
+            "")
                 OPTS_DONE='true'
                 ;;
+
+            *)
+                echo "Error: unkown option '$OPTION'!" >&2
+                return 1
         esac
     done
 
     # Get target path variable
-    local TARGETS=""
+    local TARGETS=
     if [[ "$ACTIONS" == "show" && -z "$1" ]]
     then
-        # Show: if no specified path variable, show all path variables
-        TARGETS="PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH"
+        # Show action with no path specified: show all path variables (including custom ones, except if reset)
+        [[ "$RESET" ]] && unset PATH_CUSTOM_VARIABLES
+        TARGETS="PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH ${PATH_CUSTOM_VARIABLES[@]}"
     else
         case "$1" in
-            "bin")
-                TARGETS="PATH"
+            bin)
+                TARGETS=PATH
                 ;;
 
-            "lib")
-                TARGETS="LD_LIBRARY_PATH"
+            lib)
+                TARGETS=LD_LIBRARY_PATH
                 ;;
 
-            "pkc")
-                TARGETS="PKG_CONFIG_PATH"
+            pkc)
+                TARGETS=PKG_CONFIG_PATH
                 ;;
 
-            "inc")
+            inc)
                 TARGETS="C_INCLUDE_PATH CPLUS_INCLUDE_PATH"
                 ;;
 
-            "man")
-                TARGETS="MANPATH"
+            man)
+                TARGETS=MANPATH
+                ;;
+
+            *([[:word:]]))
+                # Custom path variable: look for it in the list of custom path variables
+                local FOUND=
+                local K
+                for K in "${!PATH_CUSTOM_VARIABLES[@]}"
+                do
+                    # Found it
+                    [[ "${PATH_CUSTOM_VARIABLES[$K]}" == "$1" ]] && { FOUND="$K" ; break ; }
+                done
+
+                # Check that its name ends in PATH, unless forced or already present
+                [[ -z "$FORCE" && -z "$FOUND" && "${1: -4}" != "PATH" ]] && { echo "Error: invalid path variable '$1'!" >&2 ; return 1 ; }
+
+                # Register the target as itself
+                TARGETS=$1
+
+                # If found, forget this variable if the --reset option has been given
+                [[ "$FOUND" && "$RESET" ]] && unset PATH_CUSTOM_VARIABLES[$FOUND]
+                # Otherwise, remember the variable for later display with 'show'
+                [[ -z "$FOUND" ]] && PATH_CUSTOM_VARIABLES+=("$TARGETS")
+                ;;
+
+            '*')
+                TARGETS="PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH ${PATH_CUSTOM_VARIABLES[@]}"
                 ;;
 
             *)
-                echo "Error: unknown path variable '$1'!" >&2
+                echo "Error: invalid path variable '$1'!" >&2
                 return 1
                 ;;
         esac
@@ -173,9 +231,10 @@ function path() {
     shift
 
     # Process actions
-    for a in $ACTIONS
+    local A
+    for A in $ACTIONS
     do
-        case "$a" in
+        case "$A" in
             # Show: force verbose
             "show")
                 VERBOSE='true'
@@ -187,33 +246,37 @@ function path() {
                 [[ -z "$1" ]] && { echo "Error: empty directory path in DIRS!" >&2 ; return 1 ; }
                 local NEWPATH="$1"
                 shift
-                for d in "$@"
+                local D
+                for D in "$@"
                 do
-                    [[ -z "$d" ]] && { echo "Error: empty directory path in DIRS!" >&2 ; return 1 ; }
-                    NEWPATH="$NEWPATH:$d"
+                    [[ -z "$D" ]] && { echo "Error: empty directory path in DIRS!" >&2 ; return 1 ; }
+                    NEWPATH="$NEWPATH:$D"
                 done
 
                 # Add new path directories list
-                for t in $TARGETS
+                local T
+                for T in $TARGETS
                 do
-                    [[ -z "${!t}" ]] && eval $t="$NEWPATH" || { [[ "$a" == "append" ]] && eval $t="${!t}:$NEWPATH" || eval $t="$NEWPATH:${!t}" ; }
+                    [[ -z "${!T}" ]] && eval $T="$NEWPATH" || { [[ "$A" == "append" ]] && eval $T="${!T}:$NEWPATH" || eval $T="$NEWPATH:${!T}" ; }
                 done
                 ;;
 
             # Strip: remove DIRS from the specified path variable
             "strip")
-                for t in $TARGETS
+                local T
+                for T in $TARGETS
                 do
                     # Trick: wrap the path in ':' and replace inner ':' with '::'
-                    local TEMPPATH=":${!t//:/::}:"
+                    local TEMPPATH=":${!T//:/::}:"
 
                     # Strip directories
-                    for d in "$@"
+                    local D
+                    for D in "$@"
                     do
                         # String remove ':DIR:' (that's why we need the enclosing ':' above ;
                         # the '::' are needed so that consecutive matching entries are also caught)
-                        local PATTERN=":$d:"
-                        [[ "$GLOB" ]] && PATTERN=":*([!:])$d*([!:]):"
+                        local PATTERN=":$D:"
+                        [[ "$GLOB" ]] && PATTERN=":*([!:])$D*([!:]):"
                         TEMPPATH="${TEMPPATH//$PATTERN/}"
                     done
 
@@ -223,7 +286,7 @@ function path() {
                     TEMPPATH="${TEMPPATH%:}"
 
                     # Assign the new path
-                    eval $t="$TEMPPATH"
+                    eval $T="$TEMPPATH"
                 done
                 ;;
         esac
@@ -232,25 +295,21 @@ function path() {
     # Export the variables
     if [[ "$EXPORT" ]]
     then
-        for t in $TARGETS
+        local T
+        for T in $TARGETS
         do
-            export $t
+            export $T
         done
     fi
 
     # Be verbose
     if [[ "$VERBOSE" ]]
     then
-        for t in $TARGETS
+        local T
+        for T in $TARGETS
         do
-            echo -e "${GREEN}$t =${BLACK} ${!t}"
+            echo -e "${GREEN}$T =${BLACK} ${!T}"
         done
-    fi
-
-    # De-activate extended globbing if needed
-    if [[ "$CLEAR_EXTGLOB" ]]
-    then
-        shopt -u extglob
     fi
 }
 

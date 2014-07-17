@@ -1,0 +1,192 @@
+#!/bin/bash
+# Check whether files that should be hardlinked indeed point to the same inode
+
+
+# Build full name
+[[ "${0:0:1}" == "/" ]] && FULL_0="$0" || FULL_0="$PWD/$0"
+
+# Source required modules (bashmod first, then use it for the others)
+[[ ! -r "${BASH_MODULES_SCRIPT=${FULL_0%/*}/../bash/functions/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
+       with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
+source "$BASH_MODULES_SCRIPT"
+bashmod die
+bashmod tilde
+
+# Define some helper functions
+# rc_incr: increase RC to the given value, if not already there
+function rc_incr() { # 1:target_rc
+    [[ $RC -lt $1 ]] && RC=$1
+}
+# printcheck: print an aligned message about some checked files
+function printcheck() { # 1:status 2:message 3:files
+    local ALIGN=23                  # Message alignment
+
+    if [[ -z "$NOCOLORS" ]]
+    then
+        local BLACK='\E[0m'         # Not real black: default setting, in fact
+        local GREEN='\E[1;32;32m'   # Bold green color
+        local RED='\E[1;31;31m'     # Bold red color
+
+        local COLOR="$BLACK"
+        [[ $1 -eq 0 ]] && COLOR="$GREEN" || COLOR="$RED"
+    fi
+
+    printf "[${COLOR}*${BLACK}] %-${ALIGN}s %s\n" "$2" "$3"
+}
+
+# Check the arguments
+if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "  Usage: ${0##*/} [options] <hardlinks files>
+
+Check the consistency of hardlinks described in the given hardlinks files.
+
+A hardlinks file shall contain several lines, each line consisting of a
+list of files sharing the same inode. The first file on a line is used as
+reference file when fixing broken links or missing files.
+Hardlinks files may contain comments (whole-line or end-of-line).
+
+Available options:
+    -c|--no-colors      disable colors in the output
+    -f|--fix            fix broken hardlinks
+    -m|--fix-missing    fix missing files ; implies --fix
+    -q|--quiet          be quiet (return code indicates success/failure)
+
+Return codes:
+    0       all links ok
+    1       some links broken (fixed with --fix)
+    2       some files missing (fixed with --fix-missing)
+    3       some files not reachable (not fixed)
+    4       some reference files missing (not fixed)
+    5       some files diverged (not fixed)
+    10      other error"
+    exit
+fi
+
+# Process options
+OPTSDONE=
+NOCOLORS=
+FIX=
+FIXMISSING=
+QUIET=
+while [[ -z "$OPTSDONE" ]]
+do
+    case "$1" in
+        -c|--no-colors)
+            NOCOLORS=true
+            ;;
+
+        -f|--fix)
+            FIX=true
+            ;;
+
+        -m|--fix-missing)
+            FIXMISSING=true
+            FIX=true
+            ;;
+
+        -q|--quiet)
+            QUIET=true
+            ;;
+
+        --)
+            OPTSDONE=true
+            ;;
+
+        -*)
+            die -r10 "unknown option '$1'"
+            ;;
+
+        *)
+            break
+    esac
+    shift
+done
+# Test for remaining arguments
+[[ $# -lt 1 ]] && die -r10 "missing hardlinks file"
+# Test for valid hardlinks files
+for F in "$@"
+do
+    [[ ! -r "$F" ]] && die -r10 "invalid hardlinks file '$F'"
+done
+
+# For each hardlinks file
+while [[ $# != 0 ]]
+do
+    RC=0
+    # Read the hardlinks file line by line
+    while read FILES
+    do
+        # Check that all files on a single line share the same inode
+        INODE=0
+        for FN in $FILES
+        do
+            # Check for comments
+            [[ "${FN:0:1}" == "#" ]] && break
+            # Perform tilde expansion
+            F="$(tilde "$FN")"
+            # Check that the file exists
+            if [[ ! -f "$F" ]]
+            then
+                if [[ $INODE == 0 ]]
+                then
+                    [[ -z "$QUIET" ]] && printcheck 1 "Missing reference:" "$FN"
+                    rc_incr 4
+                    break
+                else
+                    if [[ -z "$FIXMISSING" ]]
+                    then
+                        [[ -z "$QUIET" ]] && printcheck 1 "Missing file:" "$FN"
+                    elif [[ ! -d "${F%/*}" ]]
+                    then
+                        [[ -z "$QUIET" ]] && printcheck 1 "Unreachable file:" "$FN"
+                        rc_incr 3
+                    else
+                        ln "$FILE" "$F"
+                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed missing file:" "$FN"
+                    fi
+                    rc_incr 2
+                fi
+                continue
+            fi
+            # Get the file's inode
+            IF=$(stat -c %i "$F")
+            # Take the path and inode of the first file as a reference
+            if [[ $INODE == 0 ]]
+            then
+                FILE="$F"
+                FILEN="$FN"
+                INODE=$IF
+            # Check against the inode of the reference file
+            elif [[ $INODE != $IF ]]
+            then
+                # Inodes do not match: check whether the files are different
+                if diff -q "$FILE" "$F" &> /dev/null
+                then
+                    # Files are identical, that's simply a broken hardlink
+                    if [[ -z "$FIX" ]]
+                    then
+                        [[ -z "$QUIET" ]] && printcheck 1 "Broken hardlink:" "$FILES"
+                    else
+                        rm "$F"
+                        ln "$FILE" "$F"
+                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed broken hardlink:" "$FILES"
+                    fi
+                    rc_incr 1
+                else
+                    # Files are different, report this
+                    [[ -z "$QUIET" ]] && printcheck 1 "Diverged files:" "$FILES"
+                    rc_incr 5
+                fi
+            fi
+        done
+    done < "$1"
+    # Move on to the next file
+    shift
+done
+# Display something if all went good
+[[ -z "$QUIET" && $RC == 0 ]] && printcheck 0 "All good."
+
+# Return the resulting return code
+exit $RC
+

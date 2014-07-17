@@ -6,7 +6,11 @@
 # Useful Tcl utilities.                                                     #
 #                                                                           #
 # History:                                                                  #
-# * v1.3    add [unoctalize] and [compareVersions]                          #
+# * v1.7    add [unoctalize] and [compareVersions]                          #
+# * v1.6    add [string sequence]                                           #
+# * v1.5    update [dict assign] to handle nested dicts                     #
+# * v1.4    add [foreachelse]                                               #
+# * v1.3    add [dict assign]                                               #
 # * v1.2    add [file dereference]                                          #
 #           rename into 'lwutils'                                           #
 #           replace [scriptName] with [info script]                         #
@@ -14,7 +18,7 @@
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide lwutils 1.3
+package provide lwutils 1.7.0
 
 
 # Package dependencies
@@ -292,7 +296,7 @@ proc ::lwutils::infoScript {args} {
     }
     array set params [::cmdline::getoptions args $options "$usage\noptions:"]
     if {[llength $args] > 1} {
-        return -code error "wrong number of arguments: should be \"$usage\""
+        return -code error "wrong # args: should be \"$usage\""
     }
 
     # Query mode: use the current script name
@@ -352,7 +356,7 @@ proc ::lwutils::infoPCExists {args} {
     }
     array set params [::cmdline::getoptions args $options "$usage\noptions:"]
     if {[llength $args] ne 1} {
-        return -code error "wrong number of arguments: should be \"$usage\""
+        return -code error "wrong # args: should be \"$usage\""
     }
     lassign $args name
     set testall [expr {!($params(proc) || $params(command))}]
@@ -390,7 +394,7 @@ proc ::lwutils::fileDereference {args} {
     # Parse the arguments
     set usage "file dereference name"
     if {[llength $args] ne 1} {
-        return -code error "wrong number of arguments: should be \"$usage\""
+        return -code error "wrong # args: should be \"$usage\""
     }
     lassign $args name
 
@@ -412,6 +416,139 @@ proc ::lwutils::fileDereference {args} {
 
 # Extend the file ensemble with [file dereference]
 ::lwutils::ensembleExtend file dereference ::lwutils::fileDereference
+
+#############################################################################
+# Assign the value of multiple key paths in a dictionary.
+#
+# NB: This proc uses key paths: a list of keys, for nested dicts.
+#     This means that even when accessing the first level of the dict, the
+#     given key path arguments must be lists, otherwise single keys that look
+#     like lists will cause an attempt at reaching a nested dict.
+#     E.g.:
+#       $ set d [dict create a A [list b c] "B C"]
+#       > a A {b c} {B C}
+#
+#       $ dict assign $d [list a] va [list [list b c]] vbc
+#       # OK: triggers [dict get $d [list b c]]
+#
+#       $ dict assign $d a va [list b c] vbc
+#       > key "b" not known in dictionary
+#       # KO: triggers [dict get $d b c]
+#       #     works for 'a' though
+#
+# Arguments:
+#   dict        dictionary value to assign values from
+#   keyPath     dictionary key path to the value to get (each item is the
+#               list goes one nested dict deeper: 
+#   variable    variable name in which to store the value for the key
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return: NONE
+#############################################################################
+proc ::lwutils::dictAssign {dict args} {
+    # Parse the arguments
+    set usage "dict assign dictionaryValue keyPath variable ?keyPath variable ...?"
+    if {([llength $args] < 2) || (([llength $args] % 2) ne 0)} {
+        return -code error "wrong # args: should be \"$usage\""
+    }
+
+    # Loop over the (key,variable) pairs
+    foreach {keypath variable} $args {
+        # Assign the dict's value for the key to the given caller variable
+        upvar $variable v
+        set v [dict get $dict {*}$keypath]
+    }
+}
+
+# Extend the dict ensemble with [dict assign]
+::lwutils::ensembleExtend dict assign ::lwutils::dictAssign
+
+#############################################################################
+# Foreach loop with an else body executed when the list is empty.
+# With multiple lists, the else body is executed iff all are empty.
+#
+# Arguments:
+#   varList     list of variable names to assign consecutive elements of the
+#               following list to
+#   list        list to iterate over
+#   body        body to execute for each list element
+#   else body   body to execute if all lists to iterate over are empty
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return: NONE
+#############################################################################
+proc ::lwutils::foreachelse {args} {
+    # Parse the arguments
+    set usage "foreach varList list ?varList list ...? body else body"
+    if {([llength $args] < 5) || (([llength $args] % 2) ne 1) || ([lindex $args end-1] ne "else")} {
+        return -code error "wrong # args: should be \"$usage\""
+    }
+    set pairs [lrange $args 0 end-3]
+    set body [lindex $args end-2]
+    set elsebody [lindex $args end]
+
+    # Test for emptiness
+    set empty 1
+    foreach {v l} $pairs {
+        if {[llength $l]} {
+            # Found a non-empty list: bail out
+            set empty 0
+            break
+        }
+    }
+
+    # Either run the loop or its else body
+    if {$empty} {
+        uplevel 1 $elsebody
+    } else {
+        uplevel 1 [list foreach {*}$pairs $body]
+    }
+}
+
+#############################################################################
+# Generate a sequence of characters, using the given first and last
+# characters.
+#
+# Arguments:
+#   first       first character in the sequence
+#   last        last character in the sequence
+#   incr        character increment (default: 1)
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   list of characters
+#############################################################################
+proc ::lwutils::stringSequence {first last {incr 1}} {
+    # Test for invalid increment
+    if {$incr eq 0} {
+        return -code error "null increment"
+    }
+
+    # Get the first and last characters as integers
+    scan ${first}${last} %c%c ifirst ilast
+
+    # Loop from first to last character
+    set sequence {}
+    set loop [expr {$incr > 0 ? {$i <= $ilast} : {$i >= $ilast}}]
+    for {set i $ifirst} $loop {incr i $incr} {
+        lappend sequence [format %c $i]
+    }
+
+    # Return the result
+    return $sequence
+}
+
+# Extend the info ensemble with [string sequence]
+::lwutils::ensembleExtend string sequence ::lwutils::stringSequence
 
 
 ################################ End of file ################################

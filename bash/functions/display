@@ -16,6 +16,7 @@ function dodisplay() {
     then
         export DISPLAY="$OLDDISPLAY"
         export OLDDISPLAY=""
+        echo $DISPLAY
     fi
 }
 

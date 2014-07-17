@@ -1,0 +1,60 @@
+#!/bin/bash
+# bashmod - find and source a Bash "module"
+
+
+# Paths to search for Bash modules
+export BASH_MODULES_PATH
+
+# Location of this script (for reference in the function, not exported)
+[[ "${BASH_SOURCE:0:1}" == "/" ]] && BASH_MODULES_SOURCE="$BASH_SOURCE" || BASH_MODULES_SOURCE="$PWD/$BASH_SOURCE"
+
+
+function bashmod() {
+    # Help message
+    if [[ $# != 1 || "$1" == "--help" || "$1" == "-h" ]]
+    then
+        echo "  Usage: $FUNCNAME <module name>"
+        echo "Find and source the given Bash module."
+        echo
+        echo "Modules are looked for in directories specified in the"
+        echo "BASH_MODULES_PATH environment variable."
+        return
+    fi
+
+    # Save and alter IFS to parse BASH_MODULES_PATH
+    local OLDIFS="$IFS"
+    IFS=:
+
+    # Loop over the paths to search the module for
+    # Use bashmod script directory as default value if not defined
+    local RC=255
+    local P
+    for P in ${BASH_MODULES_PATH-${BASH_MODULES_SOURCE%/*}}
+    do
+        # Ignore empty and non-existent paths
+        [[ -z "$P" || ! -d "$P" ]] && continue
+        # Look for a script by the name of the module
+        if [[ -f "$P/$1" ]]
+        then
+            # Source it
+            source "$P/$1"
+            # Set status and leave
+            RC=0
+            break
+        fi
+    done
+
+    # Restore IFS
+    IFS="$OLDIFS"
+
+    # Not found: fatal
+    if [[ $RC != 0 ]]
+    then
+        # Return if interactive, exit otherwise
+        echo "Error: Bash module '$1' not found in BASH_MODULES_PATH." >&2
+        [[ $- == *i* ]] && return $RC || exit $RC
+    fi
+    # Found: that's fine
+    return 0
+}
+

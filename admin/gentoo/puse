@@ -1,17 +1,19 @@
 #!/usr/bin/env tclsh8.6
 #############################################################################
-#   puse/pkey/plic                                                          #
+#   puse/pkey/pmask/plic                                                    #
 #                                                                           #
 # Script for management of Gentoo Portage flag files.                       #
 # Respectful of file layout (category blocks, comments, blanks, ...).       #
 # Handles:                                                                  #
 #   * USE flags in package.use when called as 'puse'                        #
 #   * keywords in package.accept_keywords when called as 'pkey'             #
+#   * masks in package.mask when called as 'pmask'                          #
 #   * licenses in package.license when called as 'plic'                     #
 #                                                                           #
 # Atoms are parsed as per PMS EAPI 5, as DEPEND atoms.                      #
 #                                                                           #
 # History:                                                                  #
+#   v0.3    Diversification: handle masks                                   #
 #   v0.2    Diversification: handle keywords and licenses                   #
 #   v0.1    Initial version: handle USE flags only                          #
 #############################################################################
@@ -45,7 +47,7 @@ namespace import ::lwutils::die ::lwutils::lremove
 #############################################################################
 
 # Version number
-set version "0.2"
+set version "0.3.2"
 
 # Operating mode (set by [SetupMode])
 set mode ""
@@ -58,6 +60,8 @@ set flagspecstatusrx {[?%+-]}
 set flagspecrx ""
 # Flag status regexp
 set flagstatusrx {[+-]}
+# Boolean indicating whether this mode uses flags (set by [SetupMode])
+set hasflags 1
 
 # Comment for the line
 set comment ""
@@ -77,16 +81,16 @@ set query ""
 # Boolean holding whether only queries were done (no set/unset/reset)
 set queryonly true
 
-# DEPEND atom regexps (see PMS EAPI 5 and ebuild(5) for specification)
+# DEPEND atom regexps (see PMS and ebuild(5) for specification)
 set constraint_rx   {(?:<|<=|=|>=|>|~)}
-set category_rx     {(?:[a-zA-Z0-9_][a-zA-Z0-9_+.-]*)}
-set package_rx      {(?:[a-zA-Z0-9_][a-zA-Z0-9_+]*(?:-(?:[a-zA-Z0-9_+]*-)*[a-zA-Z_+]*)?)}
+set category_rx     {(?:[A-Za-z0-9_][A-Za-z0-9+_.-]*)}
+set package_rx      {(?:[A-Za-z0-9_][A-Za-z0-9+_]*(?:-(?:[A-Za-z0-9+_]*-)*[A-Za-z+_]*)?)}
 set version_rx      {(?:[0-9]+(?:\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?)}
 set revision_rx     {(?:r[0-9]+)}
-set slot_rx         {(?::(?:[0-9]|[0-9][0-9.]*[0-9]))}
+set slot_rx         {(?::(?:[A-Za-z0-9_]|[A-Za-z0-9+_.-]*)(?:/(?:[A-Za-z0-9_]|[A-Za-z0-9+_.-]*))?)}
 set postfix_rx      {(?:\*)}
-set use_rx          {(?:[a-zA-Z0-9][a-zA-Z0-9@_+-]*)}
-set keyword_rx      {(?:~?[a-zA-Z0-9_][a-zA-Z0-9_-]*)}
+set use_rx          {(?:[A-Za-z0-9][A-Za-z0-9+_@-]*)}
+set keyword_rx      {(?:~?[A-Za-z0-9_][A-Za-z0-9_-]*)}
 set license_rx      {(?:[[:graph:]]+)}
 
 
@@ -110,6 +114,7 @@ set license_rx      {(?:[[:graph:]]+)}
 #   flagdesc            flag description
 #   flagspecstatusrx    flagspec status regexp
 #   flagspecrx          flagspec regexp
+#   hasflags            flags handling in current mode
 #   path                path to the default target file of the mode
 #   use_rx              USE flag regexp
 #   keyword_rx          keyword regexp
@@ -125,6 +130,7 @@ proc SetupMode {m} {
     global flagdesc
     global flagspecstatusrx
     global flagspecrx
+    global hasflags
     global path
     global use_rx
     global keyword_rx
@@ -139,6 +145,7 @@ proc SetupMode {m} {
             set path "/etc/portage/package.accept_keywords"
             set flagdesc "keyword"
             set flagspecrx "^(${flagspecstatusrx}?)(${keyword_rx})\$"
+            set hasflags 1
         }
 
         "lic" {
@@ -148,6 +155,17 @@ proc SetupMode {m} {
             set path "/etc/portage/package.license"
             set flagdesc "license"
             set flagspecrx "^(${flagspecstatusrx}?)(${license_rx})\$"
+            set hasflags 1
+        }
+
+        "mask" {
+            # Remember the operating mode
+            set mode "mask"
+            # Setup variables
+            set path "/etc/portage/package.mask"
+            set flagdesc "mask"
+            set flagspecrx {}
+            set hasflags 0
         }
 
         "use" -
@@ -158,6 +176,7 @@ proc SetupMode {m} {
             set path "/etc/portage/package.use"
             set flagdesc "USE flag"
             set flagspecrx "^(${flagspecstatusrx}?)(${use_rx})\$"
+            set hasflags 1
         }
     }
 
@@ -465,7 +484,8 @@ proc UpdateFlags {flags flagspecs} {
 #   comAlignVar     name of the variable to hold the column index for the
 #                   comment
 #
-# Globals: NONE
+# Globals:
+#   hasflags        boolean indicating whether flags are expected
 #
 # Variables: NONE
 #
@@ -473,18 +493,34 @@ proc UpdateFlags {flags flagspecs} {
 #   boolean indicating success or failure of parse
 #############################################################################
 proc ParsePackageLine {line atomVar flagAlignVar flagsVar commentVar comAlignVar} {
+    global hasflags
     upvar 1 $atomVar atom $flagAlignVar flagAlign $flagsVar flags $commentVar comment $comAlignVar comAlign
-    # Parse the package line, fill in the variables and return the result
-    set success [regexp -- {^(([^#[:space:]]+)\s+)((?:[^#[:space:]]+\s*)*)(?:\# ?(.*))?$} $line -> flagAlign atom flags comment]
-    set flagAlign [string length $flagAlign]
-    set flags [lassign $flags]
+
+    # Parse the package line and fill in the variables
+    set flagAlign -1
+    set flags {}
+    if {$hasflags} {
+        # Parse with flags (at least one)
+        set parse [regexp -- {^(([^#[:space:]]+)\s*)((?:\s[^#[:space:]]+\s*)+)(?:\s# ?(.*))?$} $line -> flagAlign atom flags comment]
+        if {$parse} {
+            set flagAlign [string length "$flagAlign "]     ;# Must add a space as there's one that's matched with the first flag
+            set flags [lassign $flags]
+        }
+    } else {
+        # Parse without flags
+        set parse [regexp -- {^([^#[:space:]]+)(?:\s+# ?(.*))?$} $line -> atom comment]
+    }
     set comAlign [string first # $line]
-    return $success
+
+    # Return the status of the parse
+    return $parse
 }
 
 #############################################################################
 # Choose an alignment value from a list of candidates. If no candidate is
 # available or if none is fitting, compute an alignment as a multiple of n.
+# The returned alignment is guaranteed to leave at least 1 space after the
+# base length.
 #
 # Arguments:
 #   base            base length after which to align
@@ -558,12 +594,12 @@ getopt flag arg $argv {
     }
     -h? - --help {
         # Print the help
-        puts "  Usage: [info script -bare] \[options\] <atom> <$flagdesc>
+        puts "  Usage: [info script -bare] \[options\] <atom> [expr {$hasflags ? "<$flagdesc>" : ""}]
 
 Add or remove package-specific ${flagdesc}s.
 
 Options:
-  -m | --mode <mode>            operating mode ('use', 'key' or 'lic')
+  -m | --mode <mode>            operating mode ('use', 'key', 'mask' or 'lic')
   -f | --file <file>            use <file> instead of the default
                                 $path
   -c | --comment <comment>      add <comment> at the end of the line;
@@ -572,8 +608,9 @@ Options:
   -v | --verbose                print the resulting ${flagdesc}s
   -h | --help                   print the help
   -V | --version                print the script version
-
-${flagdesc}s can take the following form:
+"
+    if {$hasflags} {
+        puts "${flagdesc}s can take the following form:
   [string pad "+$mode | $mode" 21] set the $flagdesc
   [string pad "-$mode" 21] unset the $flagdesc
   [string pad "%$mode" 21] reset the $flagdesc
@@ -581,6 +618,7 @@ ${flagdesc}s can take the following form:
   [string pad "?$mode" 21] query the $flagdesc
   [string pad "??" 21] query all ${flagdesc}s
 "
+    }
         # TODO: --align     to align all flags in all blocks
         # TODO: --pretend   don't do any changes ; with --verbose, print what would be done
         # TODO: --sort      just sort the file
@@ -605,9 +643,14 @@ ${flagdesc}s can take the following form:
 }
 # Get the atom and flags
 set flagspecs [lassign $args atom]
-# No atom and/or flag specified, bail out
-if {$atom eq "" || ![llength $flagspecs]} {
-    die "missing atom and/or ${flagdesc}s" 2
+# Check the remaining arguments
+if {$atom eq ""} {
+    die "missing atom" 2
+}
+if {$hasflags && ![llength $flagspecs]} {
+    die "missing flagspecs" 2
+} elseif {!$hasflags && [llength $flagspecs]} {
+    die "too many arguments (no flagspecs expected in current mode)" 2
 }
 # Check and parse the atom
 try {
@@ -622,7 +665,7 @@ try {
 } on error {} {die "unable to read file $path" 1}
 
 # Search for the atom
-set iline [lsearch -all -regexp $file "^[string escape $atom]\\s"]
+set iline [lsearch -all -regexp $file "^[string escape $atom][expr {$hasflags ? "\\s" : "\$"}]"]
 # Search for the atom's category block
 set block [lsearch -all -inline -regexp $file "^${constraint_rx}?[string escape [dict get $atomdict basecat]]\[/-\]?"]
 # Extract the alignments used in this block
@@ -651,8 +694,8 @@ if {[llength $iline] > 1} {
     # Else if atom not found: add it
     # Prepare the flags
     set flags [UpdateFlags {} $flagspecs]
-    # Check that there are flags to write indeed
-    if {[llength $flags]} {
+    # Check that there are flags to write indeed (or that it's ok if there are none)
+    if {!$hasflags || [llength $flags]} {
         # Insert the atom in its existing category block, if any
         if {$block ne ""} {
             # Augment each line with its constraint-less atom, for sorting and searching
@@ -715,17 +758,17 @@ if {[llength $iline] > 1} {
         set comAlign [ChooseAlignment [expr {$flagAlign+[string length [join $flags]]}] $blockComAlign]
 
         # Build the new line
-        set nline [string pad $atom $flagAlign][join $flags]
+        set nline [expr {$hasflags ? "[string pad $atom $flagAlign " " 1][join $flags]" : $atom}]
         # Append the comment, if any
         if {$commentset && $comment ne ""} {
-            set nline "[string pad $nline $comAlign]# $comment"
+            set nline "[string pad $nline $comAlign " " 1]# $comment"
         }
 
         # Insert it in the file
         set file [linsert $file $insert $nline]
     }
-} else {
-    # Else if atom found: update it
+} elseif {$hasflags} {
+    # Else if atom found: update its flags, if any
     # Get the current line
     set line [lindex $file $iline]
     # Parse the line
@@ -738,7 +781,7 @@ if {[llength $iline] > 1} {
     # Check whether any flags remain
     if {[llength $flags]} {
         # Rebuild the line
-        set nline [string pad $atom $flagAlign][join $flags]
+        set nline [string pad $atom $flagAlign " " 1][join $flags]
 
         # Process the comment
         if {$commentset} {
@@ -754,8 +797,8 @@ if {[llength $iline] > 1} {
             if {$comAlign eq -1} {
                 set comAlign [ChooseAlignment [string length $nline] $blockComAlign]
             }
-            # Append the comment
-            set nline "[string pad $nline $comAlign]# $comment"
+            # Append the comment (make sure there's at least 1 space before the comment)
+            set nline "[string pad $nline $comAlign " " 1]# $comment"
         }
 
         # Put the new line back in the file
@@ -782,7 +825,7 @@ if {[llength $query]} {
   [join $query "\n  "]"
 }
 # If we're being verbose, display the resulting flags
-if {$verbose} {
+if {$verbose && $hasflags} {
     if {[llength $flags]} {
         puts "[string totitle ${flagdesc}s]: [join $flags]"
     } else {
@@ -790,8 +833,8 @@ if {$verbose} {
     }
 }
 
-# Write back the file unless we did nothing else but query flags
-if {!$queryonly} {
+# Write back the file unless we did nothing but query flags (if any)
+if {!$hasflags || !$queryonly} {
     try {
         set fd [open $path w]
         puts $fd [join $file \n]
