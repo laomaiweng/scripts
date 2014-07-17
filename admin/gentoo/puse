@@ -30,10 +30,10 @@ package require Tcl 8.6
 lappend auto_path [file normalize [file join [file dirname $::argv0] ../../tcl]]
 
 package require debug
-package require qutils
+package require lwutils
 package require getopt
 
-namespace import ::qutils::die ::qutils::lremove
+namespace import ::lwutils::die ::lwutils::lremove
 
 
 #############################################################################
@@ -528,7 +528,7 @@ proc ChooseAlignment {base candidates {stride 4}} {
 #############################################################################
 
 # Detect the operating mode based on the script name
-if {[SetupMode [string tolower [string range [::qutils::scriptName] 1 end]]]} {
+if {[SetupMode [string tolower [string range [info script -bare] 1 end]]]} {
     # Invalid mode: warn the user
     puts stderr "Warning: cannot determine operating mode from script name, defaulting to 'use'"
 }
@@ -558,7 +558,7 @@ getopt flag arg $argv {
     }
     -h? - --help {
         # Print the help
-        puts "  Usage: [::qutils::scriptName] \[options\] <atom> <$flagdesc>
+        puts "  Usage: [info script -bare] \[options\] <atom> <$flagdesc>
 
 Add or remove package-specific ${flagdesc}s.
 
@@ -584,12 +584,13 @@ ${flagdesc}s can take the following form:
         # TODO: --align     to align all flags in all blocks
         # TODO: --pretend   don't do any changes ; with --verbose, print what would be done
         # TODO: --sort      just sort the file
+        # TODO: --prune     remove old versions of packages from the file
         # TODO: multiple --verbose switches increase the level of verbosity
         exit 0
     }
     -V - --version {
         # Report the version of the program
-        puts "[::qutils::scriptName] version $version"
+        puts "[info script -bare] version $version"
         exit 0
     }
     missing {
@@ -800,3 +801,4 @@ if {!$queryonly} {
 
 
 # vim:ft=tcl
+################################ End of file ################################

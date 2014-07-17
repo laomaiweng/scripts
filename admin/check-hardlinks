@@ -10,7 +10,7 @@ then
     echo "  Usage: ${0##*/} [options] <hardlinks file>
 
 Check the consistency of hardlinks described in the given hardlinks file.
-The hardlinks file should contain several lines, each line consisting of a
+The hardlinks file shall contain several lines, each line consisting of a
 list of files sharing the same inode.
 When the --fix option is specified, all files on a line are hardlinked to the
 inode of the first file of the line.
