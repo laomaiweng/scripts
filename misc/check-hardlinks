@@ -168,7 +168,7 @@ do
                     if [[ -z "$FIXMISSING" ]]
                     then
                         [[ -z "$QUIET" ]] && printcheck 1 "Missing file:" "$FN"
-                    elif [[ ! -d "${F%/*}" ]]
+                    elif [[ "$F" != "${F%/*}" && ! -d "${F%/*}" ]]
                     then
                         [[ -z "$QUIET" ]] && printcheck 1 "Unreachable file:" "$FN"
                         rc_incr 3
