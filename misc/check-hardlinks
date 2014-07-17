@@ -7,6 +7,7 @@
 # linking inconsistencies.                                                  #
 #                                                                           #
 # Version history:                                                          #
+#   v0.5a   Add --fix-broken to replace the deprecated --fix option         #
 #   v0.4    Report and fix diverged files with --fix-diverged               #
 #           Colorize the output, add the --no-colors option                 #
 #           Handle multiple hardlinks files on the command line             #
@@ -30,7 +31,7 @@ bashmod die
 bashmod tilde
 
 # Define some constants
-VERSION=0.4
+VERSION=0.5a
 
 # Define some helper functions
 # rc_incr: increase RC to the given value, if not already there
@@ -67,16 +68,17 @@ reference file when fixing broken links and diverged or missing files.
 Hardlinks files may contain comments (whole-line or end-of-line).
 
 Available options:
+    -b|--fix-broken     fix broken hardlinks
     -c|--no-colors      disable colors in the output
     -d|--fix-diverged   fix diverged files (/!\\ USE WITH CAUTION /!\\)
-    -f|--fix            fix broken hardlinks
+    -f|--fix            synonym for --fix-broken (deprecated)
     -m|--fix-missing    fix missing files
     -q|--quiet          be quiet (return code indicates success/failure)
     -V|--version        print the version number
 
 Return codes:
     0       all links ok
-    1       some links broken (fixed with --fix)
+    1       some links broken (fixed with --fix-broken)
     2       some files missing (fixed with --fix-missing)
     3       some files not reachable (not fixed)
     4       some reference files missing (not fixed)
@@ -88,13 +90,17 @@ fi
 # Process options
 OPTSDONE=
 NOCOLORS=
-FIX=
+FIXBROKEN=
 FIXMISSING=
 FIXDIVERGED=
 QUIET=
 while [[ -z "$OPTSDONE" ]]
 do
     case "$1" in
+        -b|--fix-broken)
+            FIXBROKEN=true
+            ;;
+
         -c|--no-colors)
             NOCOLORS=true
             ;;
@@ -104,7 +110,8 @@ do
             ;;
 
         -f|--fix)
-            FIX=true
+            echo "Warning: the $1 option is deprecated, use --fix-broken instead" >&2
+            FIXBROKEN=true
             ;;
 
         -m|--fix-missing)
@@ -195,7 +202,7 @@ do
                 if diff -q "$FILE" "$F" &> /dev/null
                 then
                     # Files are identical, that's simply a broken hardlink
-                    if [[ -z "$FIX" ]]
+                    if [[ -z "$FIXBROKEN" ]]
                     then
                         [[ -z "$QUIET" ]] && printcheck 1 "Broken hardlink:" "$FILES"
                     else
