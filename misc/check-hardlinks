@@ -1,5 +1,22 @@
 #!/bin/bash
-# Check whether files that should be hardlinked indeed point to the same inode
+#############################################################################
+#   check-hardlinks                                                         #
+#                                                                           #
+# Script for checking hardlinks defined in a so-called hardlinks file.      #
+# Reports on the status of the checked hardlinks, and can optionally fix    #
+# linking inconsistencies.                                                  #
+#                                                                           #
+# Version history:                                                          #
+#   v0.4    Report and fix diverged files with --fix-diverged               #
+#           Colorize the output, add the --no-colors option                 #
+#           Handle multiple hardlinks files on the command line             #
+#           Add --version flag                                              #
+#   v0.3    Fix missing files with --fix-missing                            #
+#           Add --quiet option, properly define return codes                #
+#           Ignore comments in hardlinks file, tilde-expand file names      #
+#   v0.2    Add -f option to fix broken links                               #
+#   v0.1    Report broken links or missing files                            #
+#############################################################################
 
 
 # Build full name
@@ -11,6 +28,9 @@
 source "$BASH_MODULES_SCRIPT"
 bashmod die
 bashmod tilde
+
+# Define some constants
+VERSION=0.4
 
 # Define some helper functions
 # rc_incr: increase RC to the given value, if not already there
@@ -52,6 +72,7 @@ Available options:
     -f|--fix            fix broken hardlinks
     -m|--fix-missing    fix missing files
     -q|--quiet          be quiet (return code indicates success/failure)
+    -V|--version        print the version number
 
 Return codes:
     0       all links ok
@@ -92,6 +113,11 @@ do
 
         -q|--quiet)
             QUIET=true
+            ;;
+
+        -V|--version)
+            echo "${0##*/} version $VERSION"
+            exit 0
             ;;
 
         --)
