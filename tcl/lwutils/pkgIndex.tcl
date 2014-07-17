@@ -1,2 +1,1 @@
-package ifneeded lwutils 1.6.0 [list source [file join $dir lwutils.tcl]]
-
+package ifneeded lwutils 1.7.0 [list source [file join $dir lwutils.tcl]]

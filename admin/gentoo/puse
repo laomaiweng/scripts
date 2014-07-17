@@ -35,7 +35,7 @@ package require debug
 package require lwutils
 package require getopt
 
-namespace import ::lwutils::die ::lwutils::lremove ::lwutils::reEscape
+namespace import ::lwutils::die ::lwutils::lremove
 
 
 #############################################################################
@@ -665,10 +665,9 @@ try {
 } on error {} {die "unable to read file $path" 1}
 
 # Search for the atom
-set iline [lsearch -all -regexp $file "^[reEscape $atom]\\s"]
-set iline [lsearch -all -regexp $file "^[reEscape $atom][expr {$hasflags ? "\\s" : "\$"}]"]
+set iline [lsearch -all -regexp $file "^[string escape $atom][expr {$hasflags ? "\\s" : "\$"}]"]
 # Search for the atom's category block
-set block [lsearch -all -inline -regexp $file "^${constraint_rx}?[reEscape [dict get $atomdict basecat]]\[/-\]?"]
+set block [lsearch -all -inline -regexp $file "^${constraint_rx}?[string escape [dict get $atomdict basecat]]\[/-\]?"]
 # Extract the alignments used in this block
 set blockFlagAlign {}
 set blockComAlign {}
