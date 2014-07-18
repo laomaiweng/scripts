@@ -7,7 +7,8 @@
 # linking inconsistencies.                                                  #
 #                                                                           #
 # Version history:                                                          #
-#   v0.5a   Add --fix-broken to replace the deprecated --fix option         #
+#   v0.5b   Add --fix-broken to replace the deprecated --fix option         #
+#           Revamp return code mechanism                                    #
 #   v0.4    Report and fix diverged files with --fix-diverged               #
 #           Colorize the output, add the --no-colors option                 #
 #           Handle multiple hardlinks files on the command line             #
@@ -31,15 +32,12 @@ bashmod die
 bashmod tilde
 
 # Define some constants
-VERSION=0.5a
+VERSION=0.5b
+
 
 # Define some helper functions
-# rc_incr: increase RC to the given value, if not already there
-function rc_incr() { # 1:target_rc
-    [[ $RC -lt $1 ]] && RC=$1
-}
-# printcheck: print an aligned message about some checked files
-function printcheck() { # 1:status 2:message 3:files
+# printcheck: print an aligned message about some checked files and update the global return code
+function printcheck() { # 1:code 2:message 3:files
     local ALIGN=23                  # Message alignment
 
     if [[ -z "$NOCOLORS" ]]
@@ -53,7 +51,10 @@ function printcheck() { # 1:status 2:message 3:files
     fi
 
     printf "[${COLOR}*${BLACK}] %-${ALIGN}s %s\n" "$2" "$3"
+
+    RC=$(($RC | $1))
 }
+
 
 # Check the arguments
 if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
@@ -76,14 +77,15 @@ Available options:
     -q|--quiet          be quiet (return code indicates success/failure)
     -V|--version        print the version number
 
-Return codes:
+Return codes (if not 0, the actual return code is an or-combination of
+the return codes for all unfixed issues that were encountered):
     0       all links ok
-    1       some links broken (fixed with --fix-broken)
-    2       some files missing (fixed with --fix-missing)
-    3       some files not reachable (not fixed)
-    4       some reference files missing (not fixed)
-    5       some files diverged (fixed with --fix-diverged)
-    10      other error"
+    1       some links broken (fix with --fix-broken)
+    2       some files missing (fix with --fix-missing)
+    4       some files diverged (fix with --fix-diverged)
+    8       some files unreachable (no fix)
+    16      some reference files missing (no fix)
+    128     other error"
     exit
 fi
 
@@ -132,7 +134,7 @@ do
             ;;
 
         -*)
-            die -r10 "unknown option '$1'"
+            die -r128 "unknown option '$1'"
             ;;
 
         *)
@@ -141,17 +143,17 @@ do
     shift
 done
 # Test for remaining arguments
-[[ $# -lt 1 ]] && die -r10 "missing hardlinks file"
+[[ $# -lt 1 ]] && die -r128 "missing hardlinks file"
 # Test for valid hardlinks files
 for F in "$@"
 do
-    [[ ! -r "$F" ]] && die -r10 "invalid hardlinks file '$F'"
+    [[ ! -r "$F" ]] && die -r128 "invalid hardlinks file '$F'"
 done
 
 # For each hardlinks file
+RC=0
 while [[ $# != 0 ]]
 do
-    RC=0
     # Read the hardlinks file line by line
     while read FILES
     do
@@ -168,22 +170,19 @@ do
             then
                 if [[ $INODE == 0 ]]
                 then
-                    [[ -z "$QUIET" ]] && printcheck 1 "Missing reference:" "$FN"
-                    rc_incr 4
+                    [[ -z "$QUIET" ]] && printcheck 16 "Missing reference:" "$FN"
                     break
                 else
                     if [[ -z "$FIXMISSING" ]]
                     then
-                        [[ -z "$QUIET" ]] && printcheck 1 "Missing file:" "$FN"
+                        [[ -z "$QUIET" ]] && printcheck 2 "Missing file:" "$FN"
                     elif [[ "$F" != "${F%/*}" && ! -d "${F%/*}" ]]
                     then
-                        [[ -z "$QUIET" ]] && printcheck 1 "Unreachable file:" "$FN"
-                        rc_incr 3
+                        [[ -z "$QUIET" ]] && printcheck 8 "Unreachable file:" "$FN"
                     else
                         ln "$FILE" "$F"
                         [[ -z "$QUIET" ]] && printcheck 0 "Fixed missing file:" "$FN"
                     fi
-                    rc_incr 2
                 fi
                 continue
             fi
@@ -210,18 +209,16 @@ do
                         ln "$FILE" "$F"
                         [[ -z "$QUIET" ]] && printcheck 0 "Fixed broken hardlink:" "$FILES"
                     fi
-                    rc_incr 1
                 else
                     # Files have diverged
                     if [[ -z "$FIXDIVERGED" ]]
                     then
-                        [[ -z "$QUIET" ]] && printcheck 1 "Diverged files:" "$FILES"
+                        [[ -z "$QUIET" ]] && printcheck 4 "Diverged files:" "$FILES"
                     else
                         rm "$F"
                         ln "$FILE" "$F"
                         [[ -z "$QUIET" ]] && printcheck 0 "Fixed diverged files:" "$FILES"
                     fi
-                    rc_incr 5
                 fi
             fi
         done
@@ -232,6 +229,6 @@ done
 # Display something if all went good
 [[ -z "$QUIET" && $RC == 0 ]] && printcheck 0 "All good."
 
-# Return the resulting return code
+# Return the global return code
 exit $RC
 
