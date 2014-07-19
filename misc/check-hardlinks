@@ -7,9 +7,10 @@
 # linking inconsistencies.                                                  #
 #                                                                           #
 # Version history:                                                          #
-#   v0.5c   Add --fix-broken to replace the deprecated --fix option         #
+#   v0.5d   Add --fix-broken to replace the deprecated --fix option         #
 #           Add --fix-unreachable to fix unreachable files                  #
 #           Revamp return code mechanism                                    #
+#           Display reference file next to files with issues                #
 #   v0.4    Report and fix diverged files with --fix-diverged               #
 #           Colorize the output, add the --no-colors option                 #
 #           Handle multiple hardlinks files on the command line             #
@@ -33,13 +34,14 @@ bashmod die
 bashmod tilde
 
 # Define some constants
-VERSION=0.5c
+VERSION=0.5d
 
 
 # Define some helper functions
 # printcheck: print an aligned message about some checked files and update the global return code
-function printcheck() { # 1:code 2:message 3:files
-    local ALIGN=23                  # Message alignment
+function printcheck() { # 1:code 2:message 3:file 4:reference
+    local MALIGN=23                  # Message alignment
+    local FALIGN=30                  # File alignment
 
     if [[ -z "$NOCOLORS" ]]
     then
@@ -51,7 +53,8 @@ function printcheck() { # 1:code 2:message 3:files
         [[ $1 -eq 0 ]] && COLOR="$GREEN" || COLOR="$RED"
     fi
 
-    printf "[${COLOR}*${BLACK}] %-${ALIGN}s %s\n" "$2" "$3"
+    printf "[${COLOR}*${BLACK}] %-${MALIGN}s %-${FALIGN}s" "$2" "$3"
+    [[ -n "$4" ]] && printf " (reference: %s)\n" "$4" || printf "\n"
 
     RC=$(($RC | $1))
 }
@@ -62,8 +65,7 @@ if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
 then
     echo "  Usage: ${0##*/} [options] <hardlinks files>
 
-Check the consistency of hardlinks described in the given hardlinks
-files.
+Check the consistency of hardlinks described in hardlinks files.
 
 A hardlinks file shall contain several lines, each line consisting of a
 list of files sharing the same inode. The first file on a line is used
@@ -188,20 +190,20 @@ do
                     then
                         if [[ -z "$FIXUNREACHABLE" ]]
                         then
-                            [[ -z "$QUIET" ]] && printcheck 8 "Unreachable file:" "$FN"
+                            [[ -z "$QUIET" ]] && printcheck 8 "Unreachable file:" "$FN" "$FILEN"
                         else
                             mkdir -p "${F%/*}"
                             ln "$FILE" "$F"
-                            [[ -z "$QUIET" ]] && printcheck 0 "Fixed unreachable file:" "$FN"
+                            [[ -z "$QUIET" ]] && printcheck 0 "Fixed unreachable file:" "$FN" "$FILEN"
                             FIX=1
                         fi
                     else
                         if [[ -z "$FIXMISSING" ]]
                         then
-                            [[ -z "$QUIET" ]] && printcheck 2 "Missing file:" "$FN"
+                            [[ -z "$QUIET" ]] && printcheck 2 "Missing file:" "$FN" "$FILEN"
                         else
                             ln "$FILE" "$F"
-                            [[ -z "$QUIET" ]] && printcheck 0 "Fixed missing file:" "$FN"
+                            [[ -z "$QUIET" ]] && printcheck 0 "Fixed missing file:" "$FN" "$FILEN"
                             FIX=1
                         fi
                     fi
@@ -225,22 +227,22 @@ do
                     # Files are identical, that's simply a broken hardlink
                     if [[ -z "$FIXBROKEN" ]]
                     then
-                        [[ -z "$QUIET" ]] && printcheck 1 "Broken hardlink:" "$FILES"
+                        [[ -z "$QUIET" ]] && printcheck 1 "Broken hardlink:" "$FN" "$FILEN"
                     else
                         rm "$F"
                         ln "$FILE" "$F"
-                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed broken hardlink:" "$FILES"
+                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed broken hardlink:" "$FN" "$FILEN"
                         FIX=1
                     fi
                 else
                     # Files have diverged
                     if [[ -z "$FIXDIVERGED" ]]
                     then
-                        [[ -z "$QUIET" ]] && printcheck 4 "Diverged files:" "$FILES"
+                        [[ -z "$QUIET" ]] && printcheck 4 "Diverged files:" "$FN" "$FILEN"
                     else
                         rm "$F"
                         ln "$FILE" "$F"
-                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed diverged files:" "$FILES"
+                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed diverged files:" "$FN" "$FILEN"
                         FIX=1
                     fi
                 fi
