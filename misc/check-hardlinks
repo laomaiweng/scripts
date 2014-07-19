@@ -161,8 +161,9 @@ do
 done
 
 # For each hardlinks file
+FIX=0
 RC=0
-while [[ $# != 0 ]]
+while [[ $# -ne 0 ]]
 do
     # Read the hardlinks file line by line
     while read FILES
@@ -178,7 +179,7 @@ do
             # Check that the file exists
             if [[ ! -f "$F" ]]
             then
-                if [[ $INODE == 0 ]]
+                if [[ $INODE -eq 0 ]]
                 then
                     [[ -z "$QUIET" ]] && printcheck 16 "Missing reference:" "$FN"
                     break
@@ -192,6 +193,7 @@ do
                             mkdir -p "${F%/*}"
                             ln "$FILE" "$F"
                             [[ -z "$QUIET" ]] && printcheck 0 "Fixed unreachable file:" "$FN"
+                            FIX=1
                         fi
                     else
                         if [[ -z "$FIXMISSING" ]]
@@ -200,6 +202,7 @@ do
                         else
                             ln "$FILE" "$F"
                             [[ -z "$QUIET" ]] && printcheck 0 "Fixed missing file:" "$FN"
+                            FIX=1
                         fi
                     fi
                 fi
@@ -208,13 +211,13 @@ do
             # Get the file's inode
             IF=$(stat -c %i "$F")
             # Take the path and inode of the first file as a reference
-            if [[ $INODE == 0 ]]
+            if [[ $INODE -eq 0 ]]
             then
                 FILE="$F"
                 FILEN="$FN"
                 INODE=$IF
             # Check against the inode of the reference file
-            elif [[ $INODE != $IF ]]
+            elif [[ $INODE -ne $IF ]]
             then
                 # Inodes do not match: check whether the files are different
                 if diff -q "$FILE" "$F" &> /dev/null
@@ -227,6 +230,7 @@ do
                         rm "$F"
                         ln "$FILE" "$F"
                         [[ -z "$QUIET" ]] && printcheck 0 "Fixed broken hardlink:" "$FILES"
+                        FIX=1
                     fi
                 else
                     # Files have diverged
@@ -237,6 +241,7 @@ do
                         rm "$F"
                         ln "$FILE" "$F"
                         [[ -z "$QUIET" ]] && printcheck 0 "Fixed diverged files:" "$FILES"
+                        FIX=1
                     fi
                 fi
             fi
@@ -246,7 +251,7 @@ do
     shift
 done
 # Display something if all went good
-[[ -z "$QUIET" && $RC == 0 ]] && printcheck 0 "All good."
+[[ -z "$QUIET" && $FIX -eq 0 && $RC -eq 0 ]] && printcheck 0 "All good."
 
 # Return the global return code
 exit $RC
