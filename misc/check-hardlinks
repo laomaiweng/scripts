@@ -7,7 +7,8 @@
 # linking inconsistencies.                                                  #
 #                                                                           #
 # Version history:                                                          #
-#   v0.5b   Add --fix-broken to replace the deprecated --fix option         #
+#   v0.5c   Add --fix-broken to replace the deprecated --fix option         #
+#           Add --fix-unreachable to fix unreachable files                  #
 #           Revamp return code mechanism                                    #
 #   v0.4    Report and fix diverged files with --fix-diverged               #
 #           Colorize the output, add the --no-colors option                 #
@@ -32,7 +33,7 @@ bashmod die
 bashmod tilde
 
 # Define some constants
-VERSION=0.5b
+VERSION=0.5c
 
 
 # Define some helper functions
@@ -61,21 +62,25 @@ if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
 then
     echo "  Usage: ${0##*/} [options] <hardlinks files>
 
-Check the consistency of hardlinks described in the given hardlinks files.
+Check the consistency of hardlinks described in the given hardlinks
+files.
 
 A hardlinks file shall contain several lines, each line consisting of a
-list of files sharing the same inode. The first file on a line is used as
-reference file when fixing broken links and diverged or missing files.
+list of files sharing the same inode. The first file on a line is used
+as reference file when fixing broken links and diverged or missing
+files. When fixing unreachable files, intermediate directories are
+created as necessary.
 Hardlinks files may contain comments (whole-line or end-of-line).
 
 Available options:
-    -b|--fix-broken     fix broken hardlinks
-    -c|--no-colors      disable colors in the output
-    -d|--fix-diverged   fix diverged files (/!\\ USE WITH CAUTION /!\\)
-    -f|--fix            synonym for --fix-broken (deprecated)
-    -m|--fix-missing    fix missing files
-    -q|--quiet          be quiet (return code indicates success/failure)
-    -V|--version        print the version number
+    -b|--fix-broken         fix broken hardlinks
+    -c|--no-colors          disable colors in the output
+    -d|--fix-diverged       fix diverged files (/!\\ USE CAUTION /!\\)
+    -f|--fix                synonym for --fix-broken (deprecated)
+    -m|--fix-missing        fix missing files
+    -q|--quiet              be quiet (return code indicates status)
+    -u|--fix-unreachable    fix unreachable files
+    -V|--version            print the version number
 
 Return codes (if not 0, the actual return code is an or-combination of
 the return codes for all unfixed issues that were encountered):
@@ -83,7 +88,7 @@ the return codes for all unfixed issues that were encountered):
     1       some links broken (fix with --fix-broken)
     2       some files missing (fix with --fix-missing)
     4       some files diverged (fix with --fix-diverged)
-    8       some files unreachable (no fix)
+    8       some files unreachable (fix with --fix-unreachable)
     16      some reference files missing (no fix)
     128     other error"
     exit
@@ -93,8 +98,9 @@ fi
 OPTSDONE=
 NOCOLORS=
 FIXBROKEN=
-FIXMISSING=
 FIXDIVERGED=
+FIXMISSING=
+FIXUNREACHABLE=
 QUIET=
 while [[ -z "$OPTSDONE" ]]
 do
@@ -122,6 +128,10 @@ do
 
         -q|--quiet)
             QUIET=true
+            ;;
+
+        -u|--fix-unreachable)
+            FIXUNREACHABLE=true
             ;;
 
         -V|--version)
@@ -173,15 +183,24 @@ do
                     [[ -z "$QUIET" ]] && printcheck 16 "Missing reference:" "$FN"
                     break
                 else
-                    if [[ -z "$FIXMISSING" ]]
+                    if [[ "$F" != "${F%/*}" && ! -d "${F%/*}" ]]
                     then
-                        [[ -z "$QUIET" ]] && printcheck 2 "Missing file:" "$FN"
-                    elif [[ "$F" != "${F%/*}" && ! -d "${F%/*}" ]]
-                    then
-                        [[ -z "$QUIET" ]] && printcheck 8 "Unreachable file:" "$FN"
+                        if [[ -z "$FIXUNREACHABLE" ]]
+                        then
+                            [[ -z "$QUIET" ]] && printcheck 8 "Unreachable file:" "$FN"
+                        else
+                            mkdir -p "${F%/*}"
+                            ln "$FILE" "$F"
+                            [[ -z "$QUIET" ]] && printcheck 0 "Fixed unreachable file:" "$FN"
+                        fi
                     else
-                        ln "$FILE" "$F"
-                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed missing file:" "$FN"
+                        if [[ -z "$FIXMISSING" ]]
+                        then
+                            [[ -z "$QUIET" ]] && printcheck 2 "Missing file:" "$FN"
+                        else
+                            ln "$FILE" "$F"
+                            [[ -z "$QUIET" ]] && printcheck 0 "Fixed missing file:" "$FN"
+                        fi
                     fi
                 fi
                 continue
