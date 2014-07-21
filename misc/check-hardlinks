@@ -227,10 +227,10 @@ do
                     then
                         rm "$F"
                         ln "$FILE" "$F"
-                        checklog 0 "Fixed diverged files:" "$FN" "$FILEN"
+                        checklog 0 "Fixed diverged file:" "$FN" "$FILEN"
                         FIX=1
                     else
-                        checklog 4 "Diverged files:" "$FN" "$FILEN"
+                        checklog 4 "Diverged file:" "$FN" "$FILEN"
                     fi
                 fi
             fi
