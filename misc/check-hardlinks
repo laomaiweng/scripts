@@ -7,10 +7,11 @@
 # linking inconsistencies.                                                  #
 #                                                                           #
 # Version history:                                                          #
-#   v0.5d   Add --fix-broken to replace the deprecated --fix option         #
+#   v0.5    Add --fix-broken to replace the deprecated --fix option         #
 #           Add --fix-unreachable to fix unreachable files                  #
 #           Revamp return code mechanism                                    #
 #           Display reference file next to files with issues                #
+#           Use enhanced getopt(1) for options parsing                      #
 #   v0.4    Report and fix diverged files with --fix-diverged               #
 #           Colorize the output, add the --no-colors option                 #
 #           Handle multiple hardlinks files on the command line             #
@@ -34,27 +35,30 @@ bashmod die
 bashmod tilde
 
 # Define some constants
-VERSION=0.5d
+VERSION=0.5
 
 
 # Define some helper functions
-# printcheck: print an aligned message about some checked files and update the global return code
-function printcheck() { # 1:code 2:message 3:file 4:reference
+# checklog: log an aligned message about some checked file and update the global return code
+function checklog() { # 1:code 2:message 3:file 4:reference
     local MALIGN=23                  # Message alignment
     local FALIGN=30                  # File alignment
 
-    if [[ -z "$NOCOLORS" ]]
+    if ! $QUIET
     then
-        local BLACK='\E[0m'         # Not real black: default setting, in fact
-        local GREEN='\E[1;32;32m'   # Bold green color
-        local RED='\E[1;31;31m'     # Bold red color
+        if ! $NOCOLORS
+        then
+            local BLACK='\E[0m'         # Not real black: default setting, in fact
+            local GREEN='\E[1;32;32m'   # Bold green color
+            local RED='\E[1;31;31m'     # Bold red color
 
-        local COLOR="$BLACK"
-        [[ $1 -eq 0 ]] && COLOR="$GREEN" || COLOR="$RED"
+            local COLOR
+            (( $1 == 0 )) && COLOR="$GREEN" || COLOR="$RED"
+        fi
+
+        printf "[${COLOR}*${BLACK}] %-${MALIGN}s %-${FALIGN}s" "$2" "$3"
+        [[ -n "$4" ]] && printf " (reference: %s)\n" "$4" || printf "\n"
     fi
-
-    printf "[${COLOR}*${BLACK}] %-${MALIGN}s %-${FALIGN}s" "$2" "$3"
-    [[ -n "$4" ]] && printf " (reference: %s)\n" "$4" || printf "\n"
 
     RC=$(($RC | $1))
 }
@@ -84,6 +88,9 @@ Available options:
     -u|--fix-unreachable    fix unreachable files
     -V|--version            print the version number
 
+TIP: To fix anything without thinking (indeed), use:
+       ${0##*/} -dumb <hardlinks files>
+
 Return codes (if not 0, the actual return code is an or-combination of
 the return codes for all unfixed issues that were encountered):
     0       all links ok
@@ -97,65 +104,45 @@ the return codes for all unfixed issues that were encountered):
 fi
 
 # Process options
-OPTSDONE=
-NOCOLORS=
-FIXBROKEN=
-FIXDIVERGED=
-FIXMISSING=
-FIXUNREACHABLE=
-QUIET=
-while [[ -z "$OPTSDONE" ]]
+getopt -T &> /dev/null
+(( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
+GETOPT="$(getopt -n "${0##*/}" -l fix-broken,no-colors,fix-diverged,fix,fix-missing,quiet,fix-unreachable,version -o +bcdfmquV -- "$@")"
+(( $? != 0 )) && exit 128
+eval set -- "$GETOPT"
+
+NOCOLORS=false
+FIXBROKEN=false
+FIXDIVERGED=false
+FIXMISSING=false
+FIXUNREACHABLE=false
+QUIET=false
+while true
 do
     case "$1" in
-        -b|--fix-broken)
-            FIXBROKEN=true
-            ;;
-
-        -c|--no-colors)
-            NOCOLORS=true
-            ;;
-
-        -d|--fix-diverged)
-            FIXDIVERGED=true
-            ;;
-
+        -b|--fix-broken) FIXBROKEN=true ;;
+        -c|--no-colors) NOCOLORS=true ;;
+        -d|--fix-diverged) FIXDIVERGED=true ;;
         -f|--fix)
-            echo "Warning: the $1 option is deprecated, use --fix-broken instead" >&2
             FIXBROKEN=true
+            echo "Warning: the $1 option is deprecated, use --fix-broken instead" >&2
             ;;
-
-        -m|--fix-missing)
-            FIXMISSING=true
-            ;;
-
-        -q|--quiet)
-            QUIET=true
-            ;;
-
-        -u|--fix-unreachable)
-            FIXUNREACHABLE=true
-            ;;
-
+        -m|--fix-missing) FIXMISSING=true ;;
+        -q|--quiet) QUIET=true ;;
+        -u|--fix-unreachable) FIXUNREACHABLE=true ;;
         -V|--version)
             echo "${0##*/} version $VERSION"
             exit 0
             ;;
-
         --)
-            OPTSDONE=true
-            ;;
-
-        -*)
-            die -r128 "unknown option '$1'"
-            ;;
-
-        *)
+            shift
             break
+            ;;
+        *) die -r128 "internal error!" ;;
     esac
     shift
 done
 # Test for remaining arguments
-[[ $# -lt 1 ]] && die -r128 "missing hardlinks file"
+(( $# < 1 )) && die -r128 "missing hardlinks file"
 # Test for valid hardlinks files
 for F in "$@"
 do
@@ -165,7 +152,7 @@ done
 # For each hardlinks file
 FIX=0
 RC=0
-while [[ $# -ne 0 ]]
+while (( $# != 0 ))
 do
     # Read the hardlinks file line by line
     while read FILES
@@ -181,30 +168,30 @@ do
             # Check that the file exists
             if [[ ! -f "$F" ]]
             then
-                if [[ $INODE -eq 0 ]]
+                if (( $INODE == 0 ))
                 then
-                    [[ -z "$QUIET" ]] && printcheck 16 "Missing reference:" "$FN"
+                    checklog 16 "Missing reference:" "$FN"
                     break
                 else
                     if [[ "$F" != "${F%/*}" && ! -d "${F%/*}" ]]
                     then
-                        if [[ -z "$FIXUNREACHABLE" ]]
+                        if $FIXUNREACHABLE
                         then
-                            [[ -z "$QUIET" ]] && printcheck 8 "Unreachable file:" "$FN" "$FILEN"
-                        else
                             mkdir -p "${F%/*}"
                             ln "$FILE" "$F"
-                            [[ -z "$QUIET" ]] && printcheck 0 "Fixed unreachable file:" "$FN" "$FILEN"
+                            checklog 0 "Fixed unreachable file:" "$FN" "$FILEN"
                             FIX=1
+                        else
+                            checklog 8 "Unreachable file:" "$FN" "$FILEN"
                         fi
                     else
-                        if [[ -z "$FIXMISSING" ]]
+                        if $FIXMISSING
                         then
-                            [[ -z "$QUIET" ]] && printcheck 2 "Missing file:" "$FN" "$FILEN"
-                        else
                             ln "$FILE" "$F"
-                            [[ -z "$QUIET" ]] && printcheck 0 "Fixed missing file:" "$FN" "$FILEN"
+                            checklog 0 "Fixed missing file:" "$FN" "$FILEN"
                             FIX=1
+                        else
+                            checklog 2 "Missing file:" "$FN" "$FILEN"
                         fi
                     fi
                 fi
@@ -213,37 +200,37 @@ do
             # Get the file's inode
             IF=$(stat -c %i "$F")
             # Take the path and inode of the first file as a reference
-            if [[ $INODE -eq 0 ]]
+            if (( $INODE == 0 ))
             then
                 FILE="$F"
                 FILEN="$FN"
                 INODE=$IF
             # Check against the inode of the reference file
-            elif [[ $INODE -ne $IF ]]
+            elif (( $INODE != $IF ))
             then
                 # Inodes do not match: check whether the files are different
                 if diff -q "$FILE" "$F" &> /dev/null
                 then
                     # Files are identical, that's simply a broken hardlink
-                    if [[ -z "$FIXBROKEN" ]]
+                    if $FIXBROKEN
                     then
-                        [[ -z "$QUIET" ]] && printcheck 1 "Broken hardlink:" "$FN" "$FILEN"
-                    else
                         rm "$F"
                         ln "$FILE" "$F"
-                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed broken hardlink:" "$FN" "$FILEN"
+                        checklog 0 "Fixed broken hardlink:" "$FN" "$FILEN"
                         FIX=1
+                    else
+                        checklog 1 "Broken hardlink:" "$FN" "$FILEN"
                     fi
                 else
                     # Files have diverged
-                    if [[ -z "$FIXDIVERGED" ]]
+                    if $FIXDIVERGED
                     then
-                        [[ -z "$QUIET" ]] && printcheck 4 "Diverged files:" "$FN" "$FILEN"
-                    else
                         rm "$F"
                         ln "$FILE" "$F"
-                        [[ -z "$QUIET" ]] && printcheck 0 "Fixed diverged files:" "$FN" "$FILEN"
+                        checklog 0 "Fixed diverged files:" "$FN" "$FILEN"
                         FIX=1
+                    else
+                        checklog 4 "Diverged files:" "$FN" "$FILEN"
                     fi
                 fi
             fi
@@ -253,7 +240,7 @@ do
     shift
 done
 # Display something if all went good
-[[ -z "$QUIET" && $FIX -eq 0 && $RC -eq 0 ]] && printcheck 0 "All good."
+(( $FIX == 0 && $RC == 0 )) && checklog 0 "All good."
 
 # Return the global return code
 exit $RC
