@@ -7,11 +7,12 @@
 # Procedures get nopped if environment variable TCL_DEBUG is unset.         #
 #                                                                           #
 # History:                                                                  #
-# * v1.1    add [step] and [interact]
+# * v1.2a   add [tee]                                                       #
+# * v1.1    add [step] and [interact]                                       #
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide debug 1.1
+package provide debug 1.2a1
 
 
 # Define the debug namespace
@@ -130,6 +131,56 @@ proc ::debug::interact {args} {
         if {$cmd eq "c" || $cmd eq ""} break
         catch {uplevel 1 $cmd} res
         if {[string length $res]} {puts $res}
+    }
+}
+
+#############################################################################
+# Setup a tee to duplicate the output from puts into other channel(s).
+# Use - as channel to remove the tee.
+#
+# This proc replaces the puts command with a custom one. The old puts command
+# is renamed as ::debug::teeputs.
+#
+# Arguments:
+#   args        channel(s) to tee output to (- to disable)
+#
+# Globals: NONE
+#
+# Variables:
+#   teechans    channels to tee to
+#
+# Return: NONE
+#############################################################################
+proc ::debug::tee {args} {
+    variable teechans
+
+    # Disable any existing tee
+    if {[info command ::debug::teeputs] ne ""} {
+        rename ::puts {}
+        rename ::debug::teeputs ::puts
+    }
+    set teechans {}
+
+    # Setup a new tee
+    if {$args ne "-"} {
+        # Test the channels
+        foreach chan $args {
+            if {$chan ni [chan names]} {
+                return -code error "invalid chan: $chan"
+            }
+        }
+        set teechans $args
+
+        # Move puts out of the way
+        rename ::puts ::debug::teeputs
+        # Declare a tee-ing puts wrapper
+        proc ::puts {args} {
+            set text [lindex $args end]
+            ::debug::teeputs {*}$args
+            foreach chan $::debug::teechans {
+                ::debug::teeputs $chan $text
+            }
+        }
     }
 }
 
