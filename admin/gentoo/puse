@@ -31,7 +31,6 @@ package require Tcl 8.6
 
 lappend auto_path [file normalize [file join [file dirname $::argv0] ../../tcl]]
 
-package require debug
 package require lwutils
 package require getopt
 

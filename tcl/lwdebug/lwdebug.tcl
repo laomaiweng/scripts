@@ -1,5 +1,5 @@
 #############################################################################
-#   debug.tcl                                                               #
+#   lwdebug.tcl                                                             #
 #                                                                           #
 # Author: laomaiweng <laomaiweng AT minster DOT io>                         #
 #                                                                           #
@@ -7,16 +7,17 @@
 # Procedures get nopped if environment variable TCL_DEBUG is unset.         #
 #                                                                           #
 # History:                                                                  #
-# * v1.2a   add [tee]                                                       #
+# * v1.2a2  add [tee]                                                       #
+#           rename package to 'lwdebug'                                     #
 # * v1.1    add [step] and [interact]                                       #
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide debug 1.2a1
+package provide lwdebug 1.2a2
 
 
-# Define the debug namespace
-namespace eval debug {
+# Define the lwdebug namespace
+namespace eval lwdebug {
     variable debug 1
 }
 
@@ -42,7 +43,7 @@ namespace eval debug {
 # Return:
 #   puts return value
 #############################################################################
-proc ::debug::puts {args} {
+proc ::lwdebug::puts {args} {
     return [::puts {*}$args]
 }
 
@@ -61,7 +62,7 @@ proc ::debug::puts {args} {
 # Return:
 #   string containing the current stacktrace
 #############################################################################
-proc ::debug::stacktrace {} {
+proc ::lwdebug::stacktrace {} {
     set stack "Stack trace:\n"
     for {set i 1} {$i < [info level]} {incr i} {
         set lvl [info level -$i]
@@ -94,10 +95,10 @@ proc ::debug::stacktrace {} {
 #
 # Return: NONE
 #############################################################################
-proc ::debug::step {proc {yesno 1}} {
+proc ::lwdebug::step {proc {yesno 1}} {
     # Add/remove a trace on the proc's execution
     set mode [expr {$yesno? "add" : "remove"}]
-    trace $mode execution $proc {enterstep leavestep} ::debug::interact
+    trace $mode execution $proc {enterstep leavestep} ::lwdebug::interact
 }
 
 #############################################################################
@@ -116,7 +117,7 @@ proc ::debug::step {proc {yesno 1}} {
 #
 # Return: NONE
 #############################################################################
-proc ::debug::interact {args} {
+proc ::lwdebug::interact {args} {
     # Handle the leavestep
     if {[lindex $args end] eq "leavestep"} {
         puts "==>[lindex $args 2]"
@@ -139,7 +140,7 @@ proc ::debug::interact {args} {
 # Use - as channel to remove the tee.
 #
 # This proc replaces the puts command with a custom one. The old puts command
-# is renamed as ::debug::teeputs.
+# is renamed as ::lwdebug::teeputs.
 #
 # Arguments:
 #   args        channel(s) to tee output to (- to disable)
@@ -151,13 +152,13 @@ proc ::debug::interact {args} {
 #
 # Return: NONE
 #############################################################################
-proc ::debug::tee {args} {
+proc ::lwdebug::tee {args} {
     variable teechans
 
     # Disable any existing tee
-    if {[info command ::debug::teeputs] ne ""} {
+    if {[info command ::lwdebug::teeputs] ne ""} {
         rename ::puts {}
-        rename ::debug::teeputs ::puts
+        rename ::lwdebug::teeputs ::puts
     }
     set teechans {}
 
@@ -172,13 +173,13 @@ proc ::debug::tee {args} {
         set teechans $args
 
         # Move puts out of the way
-        rename ::puts ::debug::teeputs
+        rename ::puts ::lwdebug::teeputs
         # Declare a tee-ing puts wrapper
         proc ::puts {args} {
             set text [lindex $args end]
-            ::debug::teeputs {*}$args
-            foreach chan $::debug::teechans {
-                ::debug::teeputs $chan $text
+            ::lwdebug::teeputs {*}$args
+            foreach chan $::lwdebug::teechans {
+                ::lwdebug::teeputs $chan $text
             }
         }
     }
@@ -193,13 +194,13 @@ proc ::debug::tee {args} {
 #############################################################################
 #############################################################################
 
-# Nop all debug procedures if the TCL_DEBUG environment variable is not set
+# Disable debugging if the TCL_DEBUG environment variable is not set
 if {![info exists ::env(TCL_DEBUG)]} {
     # Nop all debug procs
-    foreach proc [info procs ::debug::*] {
+    foreach proc [info procs ::lwdebug::*] {
         proc $proc args {}
     }
-    # Set debug flag to false
-    set debug 0
+    # Set the debug flag to false
+    set ::lwdebug::debug 0
 }
 
