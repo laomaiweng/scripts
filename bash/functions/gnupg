@@ -4,21 +4,21 @@
 function gpg-agent-test() {
     [[ $# -ne 1 ]] && { echo "Usage: $FUNCNAME <env-file>" >&2 ; return 1 ; }
 
-    local GPG_AGENT_BINARY=/usr/bin/gpg-agent
-    local GPG_AGENT_ENVFILE="$1"
+    local gpg_agent_binary=/usr/bin/gpg-agent
+    local gpg_agent_envfile="$1"
 
     # Test for the env file
-    [[ ! -f "$GPG_AGENT_ENVFILE" ]] && return 1
+    [[ ! -f "$gpg_agent_envfile" ]] && return 1
 
     # Source env file
-    . "$GPG_AGENT_ENVFILE"
+    . "$gpg_agent_envfile"
     # Test for the agent info
     [[ -z "$GPG_AGENT_INFO" ]] && return 1
 
     # Get the agent PID
-    local GPG_AGENT_PID=$(echo $GPG_AGENT_INFO | cut -d: -f2)
+    local gpg_agent_pid=$(echo $GPG_AGENT_INFO | cut -d: -f2)
     # Test for ownership and validity of the PID
-    [[ -O "/proc/$GPG_AGENT_PID" && "$GPG_AGENT_BINARY" -ef "/proc/$GPG_AGENT_PID/exe" ]] || { GPG_AGENT_INFO="" ; return 1 ; }
+    [[ -O "/proc/$gpg_agent_pid" && "$gpg_agent_binary" -ef "/proc/$gpg_agent_pid/exe" ]] || { unset GPG_AGENT_INFO ; return 1 ; }
 
     # All checks passed: valid agent
     return 0
