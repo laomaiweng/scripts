@@ -1,0 +1,33 @@
+#!/bin/bash
+# Convert a string of hex characters to Unicode
+
+if [[ $# -ne 0 || "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "  Usage: ${0##*/}"
+    echo
+    echo "Read hex data from standard input and print it as Unicode characters."
+    exit
+fi
+
+# Format and validate the input
+finger="$(< /dev/stdin)"
+finger="${finger//[[:space:]]/}"
+[[ -n "${finger//[0-9a-fA-F]/}" ]] && { echo "Error: invalid hex characters in input" >&2 ; exit 1 ; }
+(( ${#finger} % 4 != 0 )) && { echo "Error: number of digits should be a multiple of 4" >&2 ; exit 1 ; }
+
+# Loop over the Unicode digit blocks
+i=0
+while true
+do
+    # Extract the next Unicode digit block
+    u="${finger:$i:4}"
+    [[ -z "$u" ]] && break
+
+    # Print as Unicode
+    printf "\u$u"
+
+    # Move on
+    ((i+=4))
+done
+echo
+
