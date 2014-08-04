@@ -1,0 +1,36 @@
+#!/bin/bash
+# Convert a pass-managed password store into a single encrypted text file
+
+if [[ "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "  Usage: ${0##*/} [file]"
+    echo
+    echo "Convert a pass-managed password store into a single encrypted text file"
+    exit
+fi
+
+# Define constants
+gpg=gpg2
+pass_dir="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
+
+# Enable globstar to list all files under $pass_dir
+shopt -s globstar
+
+# Clear the output file
+[[ -z "$1" ]] && rm -f "$1"
+
+# Loop over all files, decrypt them and encrypt them back in a single text file (or stdout)
+{
+    for f in "$pass_dir"/**
+    do
+        [[ -d "$f" ]] && continue
+        [[ "${f:(-4)}" != ".gpg" ]] && continue
+        c="${f#$pass_dir/}"
+        c="${c%.gpg}"
+        echo "$c" >&2
+        printf "[%s]\n" "$c"
+        "$gpg" --quiet --batch --decrypt "$f" | sed -e '/^[[:space:]]*$/d'
+        printf "\n\n"
+    done
+} | "$gpg" --encrypt --armor > "${1:-/dev/stdout}"
+
