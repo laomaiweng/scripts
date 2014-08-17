@@ -1,0 +1,18 @@
+#!/bin/bash -e
+## Borrowed from: http://www.cyber.com.au/~twb/.bin/map
+
+## Add variadicity to a non-variadic executable.
+##
+## Usage: map foo bar -- x y z
+## expands to: foo bar x && foo bar y && foo bar z
+
+unset cmd doit
+for arg
+do  if ((doit))
+    then "${cmd[@]}" "$arg"
+    elif [[ $arg = -- ]]
+    then doit=1
+    else cmd+=("$arg")            # In bash 4, you can  say this;
+       # cmd=("${cmd[@]}" "$arg") # in bash 3, you must say this.
+    fi
+done

@@ -1,0 +1,34 @@
+#!/bin/bash -e
+## Borrowed from: http://www.cyber.com.au/~twb/.bin/foldr
+
+## Right-fold HOF, with stdio as the second datatype.
+##
+## Usage:      foldr grep -- x y z
+## expands to: grep x | grep y | grep z
+##
+## Note this is NOT the same as 'x|y|z'.
+##
+## Example: finding all five-letter words containing all the letters
+## from "mail".
+##
+##     </usr/share/dict/words egrep -x '.{5}' | foldr grep -- m a i l
+
+f=()
+while (( $# ))
+do  if [[ $1 = -- ]]
+    then
+        shift
+        case $# in
+            0)  exit 1;;        # foldr grep [] = \turnstile
+            1)  "${f[@]}" "$1";;
+            *)  "${f[@]}" "$1" |
+                "$0" "${f[@]}" -- "${@:2}";;
+        esac
+        exit
+    else
+        f+=("$1")
+        shift
+    fi
+done
+exit 2                          # foldr = partial function, i.e. fail
+
