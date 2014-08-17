@@ -1,0 +1,5 @@
+#!/bin/bash
+# Bridge from the X clipboard to the tmux paste buffers.
+
+xclip -o | tmux load-buffer "$@" -
+
