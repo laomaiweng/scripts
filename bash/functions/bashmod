@@ -22,37 +22,37 @@ function bashmod() {
     fi
 
     # Save and alter IFS to parse BASH_MODULES_PATH
-    local OLDIFS="$IFS"
+    local oldifs="$IFS"
     IFS=:
 
     # Loop over the paths to search the module for
     # Use bashmod script directory as default value if not defined
-    local RC=255
-    local P
-    for P in ${BASH_MODULES_PATH-${BASH_MODULES_SOURCE%/*}}
+    local rc=255
+    local p
+    for p in ${BASH_MODULES_PATH-${BASH_MODULES_SOURCE%/*}}
     do
         # Ignore empty and non-existent paths
-        [[ -z "$P" || ! -d "$P" ]] && continue
+        [[ -z "$p" || ! -d "$p" ]] && continue
         # Look for a script by the name of the module
-        if [[ -f "$P/$1" ]]
+        if [[ -f "$p/$1" ]]
         then
             # Source it
-            source "$P/$1"
+            source "$p/$1"
             # Set status and leave
-            RC=0
+            rc=0
             break
         fi
     done
 
     # Restore IFS
-    IFS="$OLDIFS"
+    IFS="$oldifs"
 
     # Not found: fatal
-    if [[ $RC != 0 ]]
+    if (( $rc ))
     then
         # Return if interactive, exit otherwise
         echo "Error: Bash module '$1' not found in BASH_MODULES_PATH." >&2
-        [[ $- == *i* ]] && return $RC || exit $RC
+        [[ $- == *i* ]] && return $rc || exit $rc
     fi
     # Found: that's fine
     return 0
