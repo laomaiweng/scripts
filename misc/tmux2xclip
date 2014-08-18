@@ -1,5 +1,25 @@
 #!/bin/bash
 # Bridge from the tmux paste buffers to the X clipboard.
 
-tmux show-buffer "$@" | xclip -i
+if [[ "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "Usage: ${0##*/} <\`tmux show-buffer\` options> -- <\`xclip -i\` options>"
+    exit
+fi
+
+declare -a tmux_opts
+while [[ $# -ne 0 && "$1" != "--" ]]
+do
+    tmux_opts+=("$1")
+    shift
+done
+shift
+declare -a xclip_opts
+while (( $# ))
+do
+    xclip_opts+=("$1")
+    shift
+done
+
+tmux show-buffer "${tmux_opts[@]}" | xclip -i "${xclip_opts[@]}"
 
