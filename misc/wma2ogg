@@ -1,0 +1,70 @@
+#!/bin/bash
+# Convert WMA files in a directory to OGG, preserving bitrate
+
+if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "Usage: ${0##*/} <directories>"
+    exit
+fi
+
+# Don't use '*.wma' literally when no files are matched
+shopt -s nullglob
+
+# Function printing the bitrate of a given audio file
+function bitrate() {
+    ffmpeg -i "$1" |& grep -o 'bitrate: .*' | sed -e 's|bitrate: \([^ ]*\) \(.\)b/s|\1\2|'
+}
+
+quiet=0
+
+
+# Loop through directories
+for d in "$@"
+do
+    # Move into the directory and print an overview of the parsed bitrates for each file
+    cd "$d"
+    d="${d%/}"
+    proceed=1
+    empty=1
+    if ! (( $quiet ))
+    then
+        printf "Overview for '%s':" "$d"
+        for f in *.wma *.WMA
+        do
+            empty=0
+            printf "\n  %s: %s" "$f" "$(bitrate "$f")b/s"
+        done
+        if (( $empty ))
+        then
+            printf "\E[2K\rSkipping '%s': no WMA files\n" "$d"
+            proceed=0
+        else
+            echo
+            read -r -p "Proceed? [y/N] " proceed
+            case "$proceed" in
+                y|Y) proceed=1 ;;
+                n|N) proceed=0 ;;
+            esac
+        fi
+    fi
+
+    # Process the directory
+    if (( $proceed ))
+    then
+        for f in *.wma *.WMA
+        do
+            empty=0
+            printf "\E[2K\rProcessing '%s'... %s" "$d" "$f"
+            ffmpeg -loglevel error -i "$f" -b:a "$(bitrate "$f")" "${f/wma/ogg}"
+        done
+        if (( $empty ))
+        then
+            printf "Skipping '%s': no WMA files\n" "$d"
+        else
+            printf "\E[2K\rProcessing '%s'... done\n" "$d"
+        fi
+    fi
+    (( $quiet )) || echo
+    cd "$OLDPWD"
+done
+
