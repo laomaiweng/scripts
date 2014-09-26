@@ -1,13 +1,17 @@
 #!/bin/bash
-# "Fix" MP3 id3 title tags by prepending them with the track #
+# "Fix" the title tags of audio tracks by prepending them with the track #
 
 if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]
 then
     echo <<- _EOF_
 	  Usage: ${0##*/} <directories>
 	
-	Prepend the track # to the id3 title tag of MP3 audio tracks in a directory.
-	Also convert the id3 tags to v2.4, stripping all other versions.
+	Prepend the track # to the title tag of audio tracks in a directory.
+	For MP3, also convert the id3 tags to v2.4, stripping all other versions.
+	
+	Supported file formats:
+	    mp3
+	    flac
 	
 	Note:
 	* The first space-delimited block of characters in the filename is assumed to
@@ -20,27 +24,54 @@ then
     exit
 fi
 
-function require() {
-    if ! command -v "$1" &> /dev/null
+function require() {    #1:tool [2:variable] [3+:paths]
+    local tool="$1"
+    local var="$2"
+    [[ -z "$var" ]] && var="$tool"
+    shift 2
+    if command -v "$tool" &> /dev/null
     then
-        echo "Error: the \`$1\` utility is required but not found in your PATH!" >&2
-        exit 1
+        eval $var="\$tool"
+        return
     fi
+    for p in "$@"
+    do
+        if command -v "$p/$tool" &> /dev/null
+        then
+            eval $var="\$PWD/\$p/\$tool"
+            return
+        fi
+    done
+
+    echo "Error: the \`$tool\` utility is required but not found in your PATH!" >&2
+    exit 1
 }
 
-function trackno() {
-    printf "${f%% *}"
+function trackno() {    #1:file
+    printf "${1%% *}"
 }
 
-function tracktitle() {
-    id3ted -l "$f" | sed -ne '/^TIT2:/ s/TIT2: //p'
+function tracktitle() { #1:file
+    case "${1##*.}" in
+        mp3)
+            $id3ted -l "$1" | sed -ne '/^TIT2:/ s/TIT2: //p'
+            ;;
+        flac)
+            $metaflac --list "$1" | sed -ne '/^ *comment\[[0-9]\+\]: TITLE=/ s/^.*=//p'
+            ;;
+    esac
 }
 
 # Check for required utilities
 require id3ted
+require metaflac
+require sedaflac sedaflac "${0%/*}"
 
 # Don't use * literally when no files are matched
 shopt -s nullglob
+# Don't bother with the case of the file extension
+shopt -s nocaseglob
+shopt -s nocasematch
 
 quiet=0
 
@@ -57,14 +88,14 @@ do
         do
             refresh=0
             printf "Overview for '%s':" "$d"
-            for f in *.mp3 *.MP3
+            for f in *.mp3 *.flac
             do
                 empty=0
-                printf "\n  %s - %s" "$(trackno)" "$(tracktitle)"
+                printf "\n  %s - %s" "$(trackno "$f")" "$(tracktitle "$f")"
             done
             if (( $empty ))
             then
-                printf "\E[2K\rSkipping '%s': no MP3 files\n" "$d"
+                printf "\E[2K\rSkipping '%s': no tracks\n" "$d"
                 proceed=0
             else
                 echo
@@ -79,18 +110,24 @@ do
     fi
     if (( $proceed ))
     then
-        for f in *.mp3 *.MP3
+        for f in *.mp3 *.flac
         do
             empty=0
             printf "\E[2K\rProcessing '%s'... %s" "$d" "$f"
-            id3ted -2 "$f"
-            #id3ted -n '%t.mp3' "$f"
-            id3ted -t "$(trackno) - $(tracktitle)" "$f"
-            id3ted -s "$f"
+            case "${f##*.}" in
+                mp3)
+                    $id3ted -2 "$f"
+                    $id3ted -t "$(trackno "$f") - $(tracktitle "$f")" "$f"
+                    $id3ted -s "$f"
+                    ;;
+                flac)
+                    $sedaflac 's/^TITLE=\(.*\)/TITLE='"$(trackno "$f")"' - '"$(tracktitle "$f")"'/' "$f"
+                    ;;
+            esac
         done
         if (( $empty ))
         then
-            printf "Skipping '%s': no MP3 files\n" "$d"
+            printf "Skipping '%s': no tracks\n" "$d"
         else
             printf "\E[2K\rProcessing '%s'... done\n" "$d"
         fi
