@@ -9,6 +9,8 @@ fi
 
 # Don't use '*.wma' literally when no files are matched
 shopt -s nullglob
+# Don't bother with the case of the file extension
+shopt -s nocaseglob
 
 # Function printing the bitrate of a given audio file
 function bitrate() {
@@ -29,7 +31,7 @@ do
     if ! (( $quiet ))
     then
         printf "Overview for '%s':" "$d"
-        for f in *.wma *.WMA
+        for f in *.wma
         do
             empty=0
             printf "\n  %s: %s" "$f" "$(bitrate "$f")b/s"
@@ -51,7 +53,7 @@ do
     # Process the directory
     if (( $proceed ))
     then
-        for f in *.wma *.WMA
+        for f in *.wma
         do
             empty=0
             printf "\E[2K\rProcessing '%s'... %s" "$d" "$f"
