@@ -7,13 +7,14 @@
 # Procedures get nopped if environment variable TCL_DEBUG is unset.         #
 #                                                                           #
 # History:                                                                  #
-# * v1.2a2  add [tee]                                                       #
+# * v1.2    add [run]                                                       #
+#           add [tee]                                                       #
 #           rename package to 'lwdebug'                                     #
 # * v1.1    add [step] and [interact]                                       #
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide lwdebug 1.2a2
+package provide lwdebug 1.2
 
 
 # Define the lwdebug namespace
@@ -31,6 +32,25 @@ namespace eval lwdebug {
 #############################################################################
 
 #############################################################################
+# Run debug code in the context of the caller.
+# This code is NOT run (and hence has no performance impact) when debugging
+# is disabled (the proc is nopped entirely).
+#
+# Arguments:
+#   body    code to run
+#
+# Globals: NONE
+#
+# Variables: NONE
+#
+# Return:
+#   code return value
+#############################################################################
+proc ::lwdebug::run {body} {
+    return [uplevel 1 $body]
+}
+
+#############################################################################
 # Puts wrapper.
 #
 # Arguments:
@@ -41,7 +61,7 @@ namespace eval lwdebug {
 # Variables: NONE
 #
 # Return:
-#   puts return value
+#   [puts] return value
 #############################################################################
 proc ::lwdebug::puts {args} {
     return [::puts {*}$args]
