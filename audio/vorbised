@@ -1,0 +1,16 @@
+#!/bin/bash
+
+if [[ $# -lt 2 || "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "Usage: ${0##*/} <sed script> <file ...>"
+    exit
+fi
+
+sedscript="$1"
+shift
+
+for f in "$@"
+do
+    vorbiscomment -le "$f" | sed -e "$sedscript" | vorbiscomment -we "$f"
+done
+
