@@ -11,6 +11,7 @@ then
 	
 	Supported file formats:
 	    mp3
+	    ogg
 	    flac
 	
 	Note:
@@ -61,6 +62,9 @@ function tracktitle() { #1:file
         mp3)
             $id3ted -l "$1" | sed -ne '/^TIT2:/ s/TIT2: //p'
             ;;
+        ogg)
+            $vorbiscomment -l "$1" | sed -ne '/^title=/ s/title=//p'
+            ;;
         flac)
             $metaflac --list "$1" | sed -ne '/^ *comment\[[0-9]\+\]: TITLE=/ s/^.*=//p'
             ;;
@@ -69,6 +73,8 @@ function tracktitle() { #1:file
 
 # Check for required utilities
 require id3ted
+require vorbiscomment
+require vorbised vorbised "${0%/*}"
 require metaflac
 require sedaflac sedaflac "${0%/*}"
 
@@ -93,7 +99,7 @@ do
         do
             refresh=0
             printf "Overview for '%s':" "$d"
-            for f in *.mp3 *.flac
+            for f in *.mp3 *.ogg *.flac
             do
                 empty=0
                 printf "\n  %s - %s" "$(trackno "$f")" "$(tracktitle "$f")"
@@ -115,7 +121,7 @@ do
     fi
     if (( $proceed ))
     then
-        for f in *.mp3 *.flac
+        for f in *.mp3 *.ogg *.flac
         do
             empty=0
             printf "\E[2K\rProcessing '%s'... %s" "$d" "$f"
@@ -124,6 +130,9 @@ do
                     $id3ted -2 "$f"
                     $id3ted -t "$(trackno "$f") - $(tracktitle "$f")" "$f"
                     $id3ted -s "$f"
+                    ;;
+                ogg)
+                    $vorbised 's/^title=\(.*\)/title='"$(trackno "$f")"' - '"$(tracktitle "$f")"'/' "$f"
                     ;;
                 flac)
                     $sedaflac 's/^TITLE=\(.*\)/TITLE='"$(trackno "$f")"' - '"$(tracktitle "$f")"'/' "$f"
