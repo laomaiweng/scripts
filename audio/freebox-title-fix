@@ -38,7 +38,12 @@ function require() {    #1:tool [2:variable] [3+:paths]
     do
         if command -v "$p/$tool" &> /dev/null
         then
-            eval $var="\$PWD/\$p/\$tool"
+            if [[ "${p:0:1}" == "/" ]]
+            then
+                eval $var="\$p/\$tool"
+            else
+                eval $var="\$PWD/\$p/\$tool"
+            fi
             return
         fi
     done
