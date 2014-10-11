@@ -3,7 +3,7 @@
 
 if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]
 then
-    echo <<- _EOF_
+    cat <<- _EOF_
 	  Usage: ${0##*/} <directories>
 	
 	Prepend the track # to the title tag of audio tracks in a directory.
