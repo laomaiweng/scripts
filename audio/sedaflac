@@ -9,8 +9,10 @@ fi
 sedscript="$1"
 shift
 
+# Sed and apply the tags in two steps to avoid unsetting all tags in case of a sed script error
 for f in "$@"
 do
-    metaflac --export-tags-to=- "$f" | sed -e "$sedscript" | metaflac --remove-all-tags --import-tags-from=- "$f"
+    tags="$(metaflac --export-tags-to=- "$f" | sed -e "$sedscript")" || continue
+    metaflac --remove-all-tags --import-tags-from=- "$f" <<< "$tags"
 done
 

@@ -9,8 +9,10 @@ fi
 sedscript="$1"
 shift
 
+# Sed and apply the comments in two steps to avoid unsetting all comments in case of a sed script error
 for f in "$@"
 do
-    vorbiscomment -le "$f" | sed -e "$sedscript" | vorbiscomment -we "$f"
+    comments="$(vorbiscomment -le "$f" | sed -e "$sedscript")" || continue
+    vorbiscomment -we "$f" <<< "$comments"
 done
 
