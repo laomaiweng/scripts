@@ -57,18 +57,25 @@ function trackno() {    #1:file
     printf "${1%% *}"
 }
 
-function tracktitle() { #1:file
+function tracktitle() { #1:file [2:escape]
+    local title
     case "${1##*.}" in
         mp3)
-            $id3ted -l "$1" | sed -ne '/^TIT2:/ s/TIT2: //p'
+            title="$($id3ted -l "$1" | sed -ne '/^TIT2:/ s/TIT2: //p')"
             ;;
         ogg)
-            $vorbiscomment -l "$1" | sed -ne '/^title=/ s/title=//p'
+            title="$($vorbiscomment -l "$1" | sed -ne '/^title=/ s/title=//p')"
             ;;
         flac)
-            $metaflac --list "$1" | sed -ne '/^ *comment\[[0-9]\+\]: TITLE=/ s/^.*=//p'
+            title="$($metaflac --list "$1" | sed -ne '/^ *comment\[[0-9]\+\]: TITLE=/ s/^.*=//p')"
             ;;
     esac
+    if (( ${2:-0} ))
+    then
+        sed -e 's,/,\/,g' "$1" <<< "$title"
+    else
+        echo "$title"
+    fi
 }
 
 # Check for required utilities
@@ -132,10 +139,10 @@ do
                     $id3ted -s "$f"
                     ;;
                 ogg)
-                    $vorbised 's/^title=\(.*\)/title='"$(trackno "$f")"' - '"$(tracktitle "$f")"'/' "$f"
+                    $vorbised 's/^title=\(.*\)/title='"$(trackno "$f" 1)"' - '"$(tracktitle "$f" 1)"'/' "$f"
                     ;;
                 flac)
-                    $sedaflac 's/^TITLE=\(.*\)/TITLE='"$(trackno "$f")"' - '"$(tracktitle "$f")"'/' "$f"
+                    $sedaflac 's/^TITLE=\(.*\)/TITLE='"$(trackno "$f" 1)"' - '"$(tracktitle "$f" 1)"'/' "$f"
                     ;;
             esac
         done
