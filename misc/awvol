@@ -1,5 +1,13 @@
 #!/bin/bash
-# Volume setter and notifier for awesome (with naughtyfications)
+#############################################################################
+#   awvol                                                                   #
+#                                                                           #
+# Volume setter and notifier for awesome, with naughty-fications.           #
+#                                                                           #
+# Version history:                                                          #
+#   v0.2    Add -t option to define the naughty-fication timeout            #
+#   v0.1    Initial version: get, set, mute/unmute/toggle                   #
+#############################################################################
 
 
 # Source required modules (bashmod first, then use it for the others)
@@ -11,7 +19,7 @@ bashmod die
 
 
 # Constants definitions
-version=0.1
+version=0.2
 
 
 # Function definitions
@@ -48,7 +56,7 @@ function volume_get() { # 1:backend 2:frontend 3:channel
     [[ "$mute" == "yes" || "$mute" == "off" ]] && message+="  MUTE"
     case "$frontend" in
         stdout)  echo "$message" ;;
-        naughty) awesome-client - <<< "require('naughty').notify({ text='$(sed -e "s/'/\\'/g" <<< "$message")', title='Volume', timeout=3})" ;;
+        naughty) awesome-client - <<< "require('naughty').notify({ text='$(sed -e "s/'/\\'/g" <<< "$message")', title='Volume', timeout=$timeout})" ;;
         *)       die -r1 "invalid frontend" ;;
     esac
 }
@@ -75,6 +83,7 @@ then
 	                            stdout, naughty*
 	    -c | --channel <chan>   channel to operate on
 	                            refer to the backend documentation for details
+	    -t | --timeout <to>     timeout for the naughty-fication
 	    -h | --help             this help
 	    -V | --version          print the version number
 	EOF
@@ -84,7 +93,7 @@ fi
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
-GETOPT="$(getopt -n "${0##*/}" -l backend:,frontend:,channel:,version -o +b:f:c:V -- "$@")"
+GETOPT="$(getopt -n "${0##*/}" -l backend:,frontend:,channel:,timeout:,version -o +b:f:c:t:V -- "$@")"
 (( $? != 0 )) && exit 128
 eval set -- "$GETOPT"
 
@@ -92,6 +101,7 @@ backend=pactl
 frontend=naughty
 channel="$(default_channel "$backend")"
 channel_set=false
+timeout=1
 while true
 do
     case "$1" in
@@ -107,6 +117,10 @@ do
         -c|--channel)
             channel="$2"
             channel_set=true
+            shift
+            ;;
+        -t|--timeout)
+            timeout="$(($2))"
             shift
             ;;
         -V|--version)
