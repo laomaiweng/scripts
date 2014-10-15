@@ -1,0 +1,178 @@
+#!/bin/bash
+# Volume setter and notifier for awesome (with naughtyfications)
+
+
+# Source required modules (bashmod first, then use it for the others)
+[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/functions/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
+       with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
+source "$BASH_MODULES_SCRIPT"
+bashmod die
+
+
+# Constants definitions
+version=0.1
+
+
+# Function definitions
+function regexp_escape() { # 1:string
+    sed -e 's/\./\\./g' -e 's,/,\/,g' <<< "$1"
+}
+
+function default_channel() { # 1:backend
+    case "$1" in
+        alsa|amixer)         echo "Master" ;;
+        pa|pulseaudio|pactl) echo "$(pactl info | sed -ne '/^Default Sink:/ s/^Default Sink: //p')" ;;
+        *)                   die -r1 "invalid backend" ;;
+    esac
+}
+
+function volume_get() { # 1:backend 2:frontend 3:channel
+    # Get the volume
+    case "$1" in
+        alsa|amixer)
+            get="$(amixer get "$3")"
+            left="$(sed -ne '/^  Front Left:/ s/.*\[\([0-9]\+%\)\].*$/\1/p' <<< "$get")"
+            right="$(sed -ne '/^  Front Right:/ s/.*\[\([0-9]\+%\)\].*$/\1/p' <<< "$get")"
+            mute="$(sed -ne '/^  Front Left:/ s/.*\[\(on\|off\)\]$/\1/p' <<< "$get")"
+            ;;
+        pa|pulseaudio|pactl)
+            get="$(pactl list sinks)"
+            left="$(sed -ne '/Name: '"$(regexp_escape "$3")"'/,+7 {1,+6d; s/[[:blank:]]*Volume: front-left: [^/]*\/[[:space:]]*\([0-9]\+%\).*$/\1/p}' <<< "$get")"
+            right="$(sed -ne '/Name: '"$(regexp_escape "$3")"'/,+7 {1,+6d; s/[[:blank:]]*Volume: .*front-right: [^/]*\/[[:space:]]*\([0-9]\+%\).*$/\1/p}' <<< "$get")"
+            mute="$(sed -ne '/Name: '"$(regexp_escape "$3")"'/,+6 {1,+5d; s/[[:blank:]]*Mute: //p}' <<< "$get")"
+            ;;
+    esac
+    # Display it
+    local message="L: $left  R: $right"
+    [[ "$mute" == "yes" || "$mute" == "off" ]] && message+="  MUTE"
+    case "$frontend" in
+        stdout)  echo "$message" ;;
+        naughty) awesome-client - <<< "require('naughty').notify({ text='$(sed -e "s/'/\\'/g" <<< "$message")', title='Volume', timeout=3})" ;;
+        *)       die -r1 "invalid frontend" ;;
+    esac
+}
+
+
+# Check the arguments
+if [[ "$1" == "-h" || "$1" == "--help" ]]
+then
+    cat <<- EOF
+	  Usage: ${0##*/} [options] <actions>
+	
+	Actions:
+	    get                     print the current volume
+	    set <vol>               set/alter the volume to/by <vol>
+	                            refer to the backend documentation for details
+	    mute
+	    unmute
+	    toggle                  alter the muting state
+	
+	Options:
+	    -b | --backend <tool>   select the audio backend tool:
+	                            alsa,amixer, pa,pulseaudio,pactl*
+	    -f | --frontend <tool>  select the display frontend tool:
+	                            stdout, naughty*
+	    -c | --channel <chan>   channel to operate on
+	                            refer to the backend documentation for details
+	    -h | --help             this help
+	    -V | --version          print the version number
+	EOF
+    exit
+fi
+
+# Process options
+getopt -T &> /dev/null
+(( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
+GETOPT="$(getopt -n "${0##*/}" -l backend:,frontend:,channel:,version -o +b:f:c:V -- "$@")"
+(( $? != 0 )) && exit 128
+eval set -- "$GETOPT"
+
+backend=pactl
+frontend=naughty
+channel="$(default_channel "$backend")"
+channel_set=false
+while true
+do
+    case "$1" in
+        -b|--backend)
+            backend="$2"
+            $channel_set || channel="$(default_channel "$backend")" || exit 1
+            shift
+            ;;
+        -f|--frontend)
+            frontend="$2"
+            shift
+            ;;
+        -c|--channel)
+            channel="$2"
+            channel_set=true
+            shift
+            ;;
+        -V|--version)
+            echo "${0##*/} v$version"
+            exit
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *) die -r1 "internal error!" ;;
+    esac
+    shift
+done
+# Test for remaining arguments
+(( $# < 1 )) && die -r1 "missing action"
+
+# Process the action
+case "$1" in
+    get)
+        (( $# > 1 )) && die -r1 "too many arguments for action '$1'"
+        volume_get "$backend" "$frontend" "$channel"
+        ;;
+
+    set)
+        (( $# < 1 )) && die -r1 "not enough arguments for action '$1'"
+        (( $# > 2 )) && die -r1 "too many arguments for action '$1'"
+        # Set the volume
+        case "$backend" in
+            alsa|amixer)
+                amixer set "$channel" "$2"
+                ;;
+            pa|pulseaudio|pactl)
+                case "$2" in
+                    mute|unmute|toggle)
+                        mode="$2"
+                        [[ "$2" == "mute" ]] && mode=1
+                        [[ "$2" == "unmute" ]] && mode=0
+                        pactl -- set-sink-mute "$channel" "$mode"
+                        ;;
+                    *)
+                        pactl -- set-sink-volume "$channel" "$2"
+                        ;;
+                esac
+            ;;
+        esac
+        # Display it
+        volume_get "$backend" "$frontend" "$channel"
+        ;;
+
+    mute|unmute|toggle)
+        (( $# > 1 )) && die -r1 "too many arguments for action '$1'"
+        # Mute/unmute/toggle the volume
+        case "$backend" in
+            alsa|amixer)
+                amixer set "$channel" "$1"
+                ;;
+            pa|pulseaudio|pactl)
+                mode="$1"
+                [[ "$1" == "mute" ]] && mode=1
+                [[ "$1" == "unmute" ]] && mode=0
+                pactl -- set-sink-mute "$channel" "$mode"
+            ;;
+        esac
+        # Display it
+        volume_get "$backend" "$frontend" "$channel"
+        ;;
+esac
+
