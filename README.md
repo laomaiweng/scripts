@@ -37,7 +37,7 @@ export BASH_MODULES_PATH="relpath/to/repo/modules:/path/to/user/modules:/path/to
 Tcl scripts in here often depend on some helper package being available. These packages are available in ````tcl````.
 This often causes trouble when scripts are moved or linked outside of the repository structure, since the required packages are then no longer available in canonical locations.
 
-The (simple) solution to this is to add the path to the ````tcl```` to the _TCLLIBPATH_ environment variable. Tcl automatically adds the contents of this variable to its list of locations to search for packages.
+The (simple) solution to this is to add the path to the ````tcl```` folder to the _TCLLIBPATH_ environment variable. Tcl automatically adds the contents of this variable to its list of locations to search for packages.
 
 So the minimal setup for Tcl scripts to work **outside of the repo structure** is (e.g. in your _.bashrc_):
 
