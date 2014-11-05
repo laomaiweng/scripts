@@ -1,0 +1,178 @@
+#!/bin/bash
+# todo - main function for the todo module
+
+function todo() {
+    # Test for utilities and load modules
+    command -v bashmod &> /dev/null || { echo "Error: missing utility 'bashmod'" ; return 1 ; }
+    bashmod die || { echo "Error: missing Bash module 'die'" ; return 1 ; }
+    command -v getopt &> /dev/null || { echo "Error: missing utility 'getopt'" ; return 1 ; }
+    getopt -T &> /dev/null
+    (( $? == 4 )) || die "your getopt version is too old, get the enhanced getopt from util-linux!"
+
+    # Define constants
+    local version=0.1
+    local todo_filename="${TODO_FILENAME:-TODO}"
+    local todo_print_titlecolor='\E[01;37m'
+    local todo_print_bulletcolor='\E[01;33m'
+    local default_color='\E[00m'
+
+    # Parse arguments
+    local getopt                # 'local var=$(command)' mangles the return code of $(command)
+    getopt="$(getopt -n "$FUNCNAME" -l help,version -o +hV -- "$@")"
+    (( $? != 0 )) && return 1
+    eval set -- "$getopt"
+    local action
+    while true
+    do
+        case "$1" in
+            -h|--help)
+                cat <<- _EOF_
+				  Usage: $FUNCNAME [generic options] <action> [action options]
+				
+				Control the TODO Bash module.
+				
+				Generic options:
+				    -h|--help       print this help
+				    -V|--version    print the version number
+				
+				Actions:
+				    on|off|toggle   enable/disable/toggle auto-print of a
+				                    directory's TODO file upon \`cd\`
+				    print           print the TODO for the current directory
+				    status          display status information
+				
+				'on'/'off'/'toggle' options:
+				    -q|--quiet      don't display the new auto-print status
+				
+				'print' options:
+				    -q|--quiet      don't display an error message if the
+				                    directory contains no TODO file
+				
+				_EOF_
+
+                return 0
+                ;;
+            -V|--version)
+                echo "$FUNCNAME version $version"
+                return 0
+                ;;
+            --)
+                shift
+                action="$1"
+                shift
+                break
+                ;;
+            *) die "internal error!" ;;
+        esac
+        shift
+    done
+
+    # Execute action
+    case "$action" in
+        "on"|"off"|"toggle")
+            # Parse options
+            getopt="$(getopt -n "$FUNCNAME" -l quiet -o +q -- "$@")"
+            (( $? != 0 )) && return 1
+            eval set -- "$getopt"
+            local quiet=false
+            while true
+            do
+                case "$1" in
+                    -q|--quiet) quiet=true ;;
+                    --)
+                        shift
+                        break
+                        ;;
+                    *) die "internal error!" ;;
+                esac
+                shift
+            done
+            (( $# != 0 )) && die "too many arguments"
+
+            # Resolve the 'toggle' action
+            [[ "$action" == "toggle" ]] && { [[ "$(type -t cd)" == "function" ]] && action=off || action=on ; }
+
+            # Set auto-print
+            case "$action" in
+                "on")
+                    # Install a `cd` wrapper
+                    function cd() {
+                        # Change directory and print any TODOs in the new directory
+                        builtin cd "$@"
+                        todo print -q
+                    }
+                    ;;
+
+                "off")
+                    # Remove the `cd` wrapper
+                    [[ "$(type -t cd)" == "function" ]] && unset -f cd
+                    ;;
+            esac
+            $quiet || echo "Auto-print $action"
+            ;;
+
+        "print")
+            # Parse options
+            getopt="$(getopt -n "$FUNCNAME" -l quiet -o +q -- "$@")"
+            (( $? != 0 )) && return 1
+            eval set -- "$getopt"
+            local quiet=false
+            while true
+            do
+                case "$1" in
+                    -q|--quiet) quiet=true ;;
+                    --)
+                        shift
+                        break
+                        ;;
+                    *) die "internal error!" ;;
+                esac
+                shift
+            done
+            (( $# != 0 )) && die "too many arguments"
+
+            # Print the TODO
+            local print_failed=false
+            if [[ -f "./$todo_filename" ]]
+            then
+                if ! echo "$(file -L "./$todo_filename")" | grep -q "XML"    # 'tudu' uses XML todos, rule those out
+                then
+                    echo
+                    echo -e "   ${todo_print_titlecolor}TODO:${defaultcolor}"
+                    echo
+                    echo -e "$(sed -e "s/^\\([[:blank:]]*\\*\\+\\)/${todo_print_bulletcolor//\\/\\\\}\1${default_color//\\/\\\\}/" "./$todo_filename")"
+                    echo
+                else
+                    print_failed=true
+                fi
+            else
+                print_failed=true
+            fi
+
+            # Print a failure message
+            $print_failed && ! $quiet && echo "No valid TODO in the current directory!"
+            ;;
+
+        "status")
+            # Parse options
+            (( $# != 0 )) && die "too many arguments"
+
+            # Display status information
+            local status
+            [[ "$(type -t cd)" == "function" ]] && status=on || status=off
+            echo "Auto-print $status"
+            ;;
+
+        "")
+            die "missing action"
+            ;;
+        *)
+            die "unknown action '$action'"
+            ;;
+    esac
+}
+
+
+# Enable TODO auto-print
+todo on -q
+
