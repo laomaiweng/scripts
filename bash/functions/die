@@ -3,9 +3,9 @@
 
 function die() {
     # Get the last return code
-    local RC=$?
-    local PREFIX="Error: "
-    local MSG
+    local rc=$?
+    local prefix="Error: "
+    local msg
     # Parse arguments
     while [[ $# -gt 0 ]]
     do
@@ -24,19 +24,19 @@ Options:
                 ;;
 
             -i|--inline)
-                PREFIX=""
+                prefix=""
                 ;;
 
             -p*|--prefix)
-                PREFIX=""
-                [[ "${1:0:2}" == "-p" ]] && PREFIX=${1#-p}
-                [[ -z "$PREFIX" ]] && { PREFIX="$2" ; shift ; }
+                prefix=""
+                [[ "${1:0:2}" == "-p" ]] && prefix=${1#-p}
+                [[ -z "$prefix" ]] && { prefix="$2" ; shift ; }
                 ;;
 
             -r*|--return)
-                RC=""
-                [[ "${1:0:2}" == "-r" ]] && RC=${1#-r}
-                [[ -z "$RC" ]] && { RC="$2" ; shift ; }
+                rc=""
+                [[ "${1:0:2}" == "-r" ]] && rc=${1#-r}
+                [[ -z "$rc" ]] && { rc="$2" ; shift ; }
                 ;;
 
             --)
@@ -54,14 +54,14 @@ Options:
     # Get the message
     while [[ $# -gt 0 ]]
     do
-        MSG="${MSG:+$MSG }$1"
+        msg="${msg:+$msg }$1"
         shift
     done
     # Handle empty message a bit differently
-    [[ -z "$MSG" ]] && { PREFIX="" ; MSG="Error!" ; }
+    [[ -z "$msg" ]] && { prefix="" ; msg="Error!" ; }
     # Print message
-    echo -e "$PREFIX$MSG" 1>&2
+    echo -e "$prefix$msg" 1>&2
     # Exit with return code (return if interactive)
-    [[ $- == *i* ]] && return $RC || exit $RC
+    [[ $- == *i* ]] && return $rc || exit $rc
 }
 
