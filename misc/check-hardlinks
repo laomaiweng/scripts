@@ -7,6 +7,7 @@
 # linking inconsistencies.                                                  #
 #                                                                           #
 # Version history:                                                          #
+#   v0.6a   Add --diff to diff diverged files                               #
 #   v0.5    Add --fix-broken to replace the deprecated --fix option         #
 #           Add --fix-unreachable to fix unreachable files                  #
 #           Revamp return code mechanism                                    #
@@ -36,7 +37,7 @@ bashmod die
 bashmod tilde
 
 # Define some constants
-version=0.5.1
+version=0.6a
 
 
 # Define some helper functions
@@ -83,6 +84,10 @@ Available options:
     -b|--fix-broken         fix broken hardlinks
     -c|--no-colors          disable colors in the output
     -d|--fix-diverged       fix diverged files (/!\\ USE CAUTION /!\\)
+    -D[command]             offer to print a diff of diverged files
+      |--diff[=command]     the optional [command] argument specifies the diff
+                            command to use (%REF and %LINK in the command get
+                            replaced with the paths to the compared files)
     -f|--fix                synonym for --fix-broken (deprecated)
     -m|--fix-missing        fix missing files
     -q|--quiet              be quiet (return code indicates status)
@@ -107,22 +112,24 @@ fi
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l fix-broken,no-colors,fix-diverged,fix,fix-missing,quiet,fix-unreachable,version -o +bcdfmquV -- "$@")"
+getopt="$(getopt -n "${0##*/}" -l fix-broken,no-colors,fix-diverged,diff::,fix,fix-missing,quiet,fix-unreachable,version -o +bcdD::fmquV -- "$@")"
 (( $? != 0 )) && exit 128
 eval set -- "$getopt"
 
-nocolors=false
 fixbroken=false
+nocolors=false
 fixdiverged=false
+diff=
 fixmissing=false
-fixunreachable=false
 quiet=false
+fixunreachable=false
 while true
 do
     case "$1" in
         -b|--fix-broken) fixbroken=true ;;
         -c|--no-colors) nocolors=true ;;
         -d|--fix-diverged) fixdiverged=true ;;
+        -D|--diff) diff="${2:-diff}" ; shift ;;
         -f|--fix)
             fixbroken=true
             echo "Warning: the $1 option is deprecated, use --fix-broken instead" >&2
@@ -232,11 +239,31 @@ do
                         fix=1
                     else
                         checklog 4 "Diverged file:" "$fn" "$filen"
+
+                        # Offer to diff
+                        if [[ -n "$diff" ]]
+                        then
+                            # Ask the user first
+                            read -p "Diff files? [y/N] " -r -u 3 ans
+                            if [[ "${ans,,}" =~ ^y(es)?$ ]]
+                            then
+                                # Load the command into an array
+                                read -a origdiffcommand -r <<< "$diff"
+                                # Substitute the %REF and %LINK patterns in the command
+                                diffcommand=("${origdiffcommand[@]//%REF/$filen}")
+                                diffcommand=("${diffcommand[@]//%LINK/$fn}")
+                                [[ "${diffcommand[*]}" == "${origdiffcommand[*]}" ]] && diffcommand+=("$filen" "$fn")
+                                # Run the command
+                                eval "${diffcommand[@]}" <&3
+                            fi
+                            echo
+                        fi
                     fi
                 fi
             fi
         done
-    done < "$1"
+    # Preserve stdin as file descriptor 3
+    done 3<&0- < "$1"
     # Move on to the next file
     shift
 done
