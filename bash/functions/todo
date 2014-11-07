@@ -98,8 +98,11 @@ function todo() {
                     # Install a `cd` wrapper
                     function cd() {
                         # Change directory and print any TODOs in the new directory
+                        local rc
                         builtin cd "$@"
-                        todo print -q
+                        rc=$?
+                        (( $rc == 0 )) && todo print -q
+                        return $rc
                     }
                     ;;
 
