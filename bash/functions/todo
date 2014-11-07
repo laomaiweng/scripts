@@ -108,7 +108,7 @@ function todo() {
                     [[ "$(type -t cd)" == "function" ]] && unset -f cd
                     ;;
             esac
-            $quiet || echo "Auto-print $action"
+            $quiet || echo "auto-print: $action"
             ;;
 
         "print")
@@ -160,7 +160,7 @@ function todo() {
             # Display status information
             local status
             [[ "$(type -t cd)" == "function" ]] && status=on || status=off
-            echo "Auto-print $status"
+            echo "auto-print: $status"
             ;;
 
         "")
