@@ -7,12 +7,23 @@ then
     exit
 fi
 
+function aflversion() {
+    afl-fuzz | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g ; q" | sed -e 's/^afl-fuzz \([^ ]\+\) .*$/\1/'
+}
+
 echo -n "Current version: "
-current="$(afl-fuzz | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g ; q" | sed -e 's/^afl-fuzz \([^ ]\+\) .*$/\1/')"
+current="$(aflversion)"
 echo "$current"
 
+function cleanup () {
+    rm -f "$changelog"
+}
+trap cleanup EXIT
+
 echo -n "Latest version: "
-latest="$(wget -q -O - 'http://lcamtuf.coredump.cx/afl/ChangeLog.txt' | sed -ne '/^Version [^:]\+:$/ { s/^Version \([^:]\+\):$/\1/p ; q }')"
+changelog="$(mktemp --tmpdir afl-changelog-XXXXXX)"
+wget -q -O "$changelog" 'http://lcamtuf.coredump.cx/afl/ChangeLog.txt'
+latest="$(sed -ne '/^Version [^:]\+:$/ { s/^Version \([^:]\+\):$/\1/p ; q }' "$changelog")"
 echo "$latest"
 echo
 
@@ -23,17 +34,53 @@ if [[ "${ans,,}" =~ ^y(es)?$ ]]
 then
     echo
     wget -O "afl-${latest}.tar.gz" "http://lcamtuf.coredump.cx/afl/releases/afl-${latest}.tgz"
-    tar xzvf "afl-${latest}.tar.gz"
+    tar xzf "afl-${latest}.tar.gz"
     cd "afl-${latest}"
     make
     make install PREFIX="${PREFIX:-$HOME/.local}"
     make clean
     cd ..
-    rm -rf "afl-${current}"
-    rm -f "afl-${current}.tar.gz"
 
     echo
-    new="$(afl-fuzz | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g ; q" | sed -e 's/^afl-fuzz \([^ ]\+\) .*$/\1/')"
-    [[ "$new" == "$latest" ]] && echo "afl successfully updated to version $latest!" || echo "Upgrade failed!"
+    if [[ "$(aflversion)" == "$latest" ]]
+    then
+        rm -rf "afl-${current}"
+        rm -f "afl-${current}.tar.gz"
+
+        echo "Changelog:"
+        echo
+        awk -v FROM="$current" -f - -- "$changelog" <<- "_EOF_"
+			BEGIN {
+			    do_print = 0
+			}
+			/^Version .*/ {
+			    if (do_print) {
+			        match($0, "^Version ([^:]+):", a)
+			        if (a[1] == FROM) {
+			            exit
+			        }
+			    }
+			    do_print = 1
+			    print "    --------------"
+			    print "    " $0
+			    print "    --------------"
+			    next
+			}
+			/^-+$/ {
+			    next
+			}
+			{
+			    if (do_print) {
+			        print "    " $0
+			    }
+			}
+			_EOF_
+
+        echo "afl successfully updated to version $latest!"
+        echo
+    else
+        echo "Upgrade failed!"
+    fi
 fi
 
+# vim: ts=4
