@@ -1,0 +1,90 @@
+#!/bin/bash
+# apodget - APOD downloader
+# Requires: getopt mktemp awk wget xmllint vilistextum exiv2 jp2a
+
+
+# Build full name
+[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
+
+# Source required modules (bashmod first, then use it for the others)
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/functions/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
+       with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
+source "$BASH_MODULES_SCRIPT"
+bashmod die
+
+# Check the arguments
+if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "  Usage: ${0##*/} [options] <urls>
+
+Download APOD pictures and store them along with their text."
+    exit
+fi
+
+# Process options
+getopt -T &> /dev/null
+(( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
+getopt="$(getopt -n "${0##*/}" -l preview:: -o +p:: -- "$@")"
+(( $? != 0 )) && exit 1
+eval set -- "$getopt"
+
+preview=
+while true
+do
+    case "$1" in
+        -p|--preview) preview="${2:-jp2a --colors}" ; shift ;;
+        --) shift ; break ;;
+        *) die "internal error!" ;;
+    esac
+    shift
+done
+# Test for remaining arguments
+(( $# < 1 )) && die "missing urls"
+
+# For each URL
+while (( $# != 0 ))
+do
+    url="$1"
+    shift
+
+    # Extract the APOD number
+    name="${url##*/}"
+    name="${name%.html}"
+    [[ -z "$name" ]] && { echo "Invalid URL: $url" >&2 ; continue ; }
+
+    # Grab the page
+    html="$(mktemp --tmpdir apod-$name-XXXXXXXXXX.html)"
+    wget -q -O "$html" "$url"
+
+    # Grab the image
+    image="$(xmllint --html --nonet --xpath "string(//img/ancestor::a/@href)" "$html" 2> /dev/null)"
+    file="$name - ${image##*/}"
+    wget -O "$file" "${url%/*}/$image"
+
+    # Grab the text
+    title="$(xmllint --html --nonet --xpath "/html/head/title/text()" "$html" 2> /dev/null)"
+    text="$(awk -- 'BEGIN {dump=0;}
+/<b> Explanation: <\/b>/ {dump=1; next;}
+/^<p>/ {dump=0;}
+{if (dump) {print $0;}}' "$html" | vilistextum - -)"
+
+    # Set the image metadata
+    exiv2 -M "add Exif.Image.DocumentName \"$url\"" modify "$file"
+    exiv2 -M "add Exif.Image.ImageDescription \"$title\"" modify "$file"
+    exiv2 -M "add Exif.Photo.UserComment \"$title
+
+$text\"" modify "$file"
+
+    # Clean up
+    rm -f "$html"
+
+    # Print preview
+    if [[ -n "$preview" ]]
+    then
+        # Load and run the command from an array
+        read -a previewcommand -r <<< "$preview"
+        previewcommand+=("$file")
+        "${previewcommand[@]}"
+    fi
+done
+
