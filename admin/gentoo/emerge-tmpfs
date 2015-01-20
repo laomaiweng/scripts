@@ -11,5 +11,10 @@ available for the actual build!" >&2
     exit
 fi
 
-sudo mount -t tmpfs -o size=$1,mode=775,uid=root,gid=portage tmpfs /var/tmp/portage/
+# PORTAGE_TMPDIR unset: source Portage config or default to /usr/portage/distfiles
+[[ -z "$PORTAGE_TMPDIR" ]] && . /etc/portage/make.conf
+[[ -z "$PORTAGE_TMPDIR" ]] && PORTAGE_TMPDIR=/var/tmp/portage
+
+# Mount the tmpfs
+mount -t tmpfs -o size="$1",mode=775,uid=root,gid=portage tmpfs "$PORTAGE_TMPDIR"
 
