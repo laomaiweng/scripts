@@ -38,7 +38,7 @@ function todo() {
 				Actions:
 				    on|off|toggle   enable/disable/toggle auto-print of a
 				                    directory's TODO file upon \`cd\`
-				    print           print the TODO for the current directory
+				    p|print         print the TODO for the current directory
 				    status          display status information
 				
 				'on'/'off'/'toggle' options:
@@ -114,7 +114,7 @@ function todo() {
             $quiet || echo "auto-print: $action"
             ;;
 
-        "print")
+        "p"|"print")
             # Parse options
             getopt="$(getopt -n "$FUNCNAME" -l quiet -o +q -- "$@")"
             (( $? != 0 )) && return 1
