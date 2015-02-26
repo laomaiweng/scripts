@@ -1,6 +1,6 @@
 #!/bin/bash
 # apodget - APOD downloader
-# Requires: getopt mktemp awk wget xmllint vilistextum exiv2 jp2a
+# Requires: getopt mktemp awk wget xmllint vilistextum exiv2 [jp2a]
 
 
 # Build full name
@@ -15,23 +15,32 @@ bashmod die
 # Check the arguments
 if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
 then
-    echo "  Usage: ${0##*/} [options] <urls>
-
-Download APOD pictures and store them along with their text."
+    cat <<- _EOF_
+	  Usage: ${0##*/} [options] <urls>
+	
+	Download APOD pictures and store them along with their text.
+	
+	Options:
+	  -d | --dir <directory>        directory in which to store the pictures
+	  -p | --preview [previewer]    preview the downloaded pictures
+	                                (default previewer: \`jp2a --colors\`)
+	_EOF_
     exit
 fi
 
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l preview:: -o +p:: -- "$@")"
+getopt="$(getopt -n "${0##*/}" -l dir:preview:: -o +d:p:: -- "$@")"
 (( $? != 0 )) && exit 1
 eval set -- "$getopt"
 
 preview=
+dir=.
 while true
 do
     case "$1" in
+        -d|--dir) dir="${2:-.}" ; dir="${dir%/}" ; shift ;;
         -p|--preview) preview="${2:-jp2a --colors}" ; shift ;;
         --) shift ; break ;;
         *) die "internal error!" ;;
@@ -50,30 +59,30 @@ do
     # Extract the APOD number
     name="${url##*/}"
     name="${name%.html}"
-    [[ -z "$name" ]] && { echo "Invalid URL: $url" >&2 ; continue ; }
+    [[ -z "$name" || "$name" == "$url" ]] && { echo "Invalid URL: $url" >&2 ; continue ; }
 
     # Grab the page
     html="$(mktemp --tmpdir apod-$name-XXXXXXXXXX.html)"
-    wget -q -O "$html" "$url"
+    wget -q -O "$html" -- "$url" || die "page wget failed: $url"
 
     # Grab the image
-    image="$(xmllint --html --nonet --xpath "string(//img/ancestor::a/@href)" "$html" 2> /dev/null)"
-    file="$name - ${image##*/}"
-    wget -O "$file" "${url%/*}/$image"
+    image="$(xmllint --html --nonet --xpath "string(//img/ancestor::a/@href)" "$html" 2> /dev/null || die "image extraction failed: $url")"
+    file="$dir/$name - ${image##*/}"
+    wget -O "$file" -- "${url%/*}/$image" || die "image wget failed: $url"
 
     # Grab the text
-    title="$(xmllint --html --nonet --xpath "/html/head/title/text()" "$html" 2> /dev/null)"
+    title="$(xmllint --html --nonet --xpath "/html/head/title/text()" "$html" 2> /dev/null || die "text extraction failed: $url")"
     text="$(awk -- 'BEGIN {dump=0;}
 /<b> Explanation: <\/b>/ {dump=1; next;}
 /^<p>/ {dump=0;}
 {if (dump) {print $0;}}' "$html" | vilistextum - -)"
 
     # Set the image metadata
-    exiv2 -M "add Exif.Image.DocumentName \"$url\"" modify "$file"
-    exiv2 -M "add Exif.Image.ImageDescription \"$title\"" modify "$file"
+    exiv2 -M "add Exif.Image.DocumentName \"$url\"" modify "$file" || die "metadata editing failed: $url"
+    exiv2 -M "add Exif.Image.ImageDescription \"$title\"" modify "$file" || die "metadata editing failed: $url"
     exiv2 -M "add Exif.Photo.UserComment \"$title
 
-$text\"" modify "$file"
+$text\"" modify "$file" || die "metadata editing failed: $url"
 
     # Clean up
     rm -f "$html"
