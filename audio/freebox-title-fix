@@ -95,6 +95,11 @@ quiet=0
 
 for d in "$@"
 do
+    if ! [[ -d "$d" ]]
+    then
+        printf "Skipping '%s': no such directory\n" "$d"
+        continue
+    fi
     cd "$d"
     d="${d%/}"
     proceed=1
