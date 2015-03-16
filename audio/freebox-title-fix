@@ -72,7 +72,7 @@ function tracktitle() { #1:file [2:escape]
     esac
     if (( ${2:-0} ))
     then
-        sed -e 's,/,\/,g' -e 's/&/\&/g' "$1" <<< "$title"
+        sed -e 's,/,\/,g' -e 's/&/\&/g' <<< "$title"
     else
         echo "$title"
     fi
