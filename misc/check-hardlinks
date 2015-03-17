@@ -158,7 +158,7 @@ do
         -b|--fix-broken) fixbroken=true ;;
         -c|--no-colors) nocolors=true ;;
         -d|--fix-diverged) fixdiverged=true ;;
-        -D|--diff) diff="${2:-diff}" ; shift ;;
+        -D|--diff) diff="${2:-diff -u}" ; shift ;;
         -f|--fix)
             fixbroken=true
             echo "Warning: the $1 option is deprecated, use --fix-broken instead" >&2
