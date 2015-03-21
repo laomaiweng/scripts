@@ -1,0 +1,41 @@
+#!/bin/bash
+# mv wrapper that proceeds in two steps if the source and destination only differ by case
+
+# Retrieve the options
+declare -a mvopts
+while (( $# > 2 ))
+do
+    mvopts+=("$1")
+    shift
+done
+
+# Retrieve the arguments
+if (( $# < 2 ))
+then
+    cat <<- _EOF_
+	  Usage: ${0##*/} [options] <source> <destination>
+	
+	Rename <source> to <destination>.
+	If <source> and <destination> only differ by case, perform a
+	two-step rename using an intermediary temporary filename.
+	Otherwise mv(1) is used.
+	
+	[options] are passed directly to mv(1).
+	_EOF_
+fi
+src="$1"
+dst="$2"
+
+# Perform the move
+if [[ "${src,,}" == "${dst,,}" ]]
+then
+    # 2-step move: src to tmp
+    tmp="$(mktemp --tmpdir="$PWD" "${0##*/}.XXXXXXXXXX")"
+    mv -f "$src" "$tmp"
+    # 2-step move: $tmp to $dst (or $tmp back to $src if it fails)
+    mv "${mvopts[@]}" "$tmp" "$dst" || mv -f "$tmp" "$src"
+else
+    # Regular move
+    mv "${mvopts[@]}" "$src" "$dst"
+fi
+
