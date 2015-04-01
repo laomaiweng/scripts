@@ -1,25 +1,34 @@
 #!/bin/bash
 
+KERNELDIR="${KERNELDIR:-/usr/src/linux}"
+KERNELCONF="${KERNELCONF:-$KERNELDIR/.config.cobalt}"
+
 if [[ "$1" == "-h" || "$1" == "--help" ]]
 then
-    echo "  Usage: ${0##*/}
-
-Generates a kernel using /usr/src/linux/.config.cobalt.
-Generates the corresponding initramfs with LVM, framebuffer
-and splash support. Also strips the initramfs from unneeded
-stuff (modules and HW detection logic)."
+    cat <<- _EOF_
+	  Usage: ${0##*/} [options]
+	
+	Generates a kernel and its initramfs with LVM, framebuffer and splash
+	support. Also strips the initramfs from unneeded stuff (modules and HW
+	detection logic).
+	
+	The kernel is configured and built in:
+	    $KERNELDIR
+	using configuration:
+	    $KERNELCONF
+	_EOF_
     exit
 fi
 
 
-genkernel --save-config --mrproper --install --symlink --no-ramdisk-modules --no-all-ramdisk-modules --kernel-config=/usr/src/linux/.config.cobalt --mountboot --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --lvm --no-mdadm --no-dmraid --no-luks --kernname="cobalt" --no-firmware --compress-initramfs-type=gzip all
+genkernel --save-config --mrproper --install --symlink --no-ramdisk-modules --no-all-ramdisk-modules --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --mountboot --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --lvm --no-mdadm --no-dmraid --no-luks --kernname="cobalt" --no-firmware --compress-initramfs-type="gzip" all
 
 
-if [[ $? == 0 ]]
+if (( $? == 0 ))
 then
     echo
     echo
-    INITRAMFS="`ls -ct -1 /boot/initramfs* | head -n 1`"    # use most recently touched initramfs
+    INITRAMFS="$(ls -ct -1 /boot/initramfs* | head -n 1)"    # use most recently touched initramfs
     INITDIR="${0##*/}-initramfs"
     IMPORTER="${0%/*}/import-initramfs"
     if [[ -f "$INITRAMFS" && -x "$IMPORTER" ]]
@@ -50,7 +59,12 @@ then
     fi
 fi
 
-emerge -av @module-rebuild
+if (( $? == 0 ))
+then
+    echo
+    echo
+    emerge -av @module-rebuild
+fi
 
 echo
 echo "Done."
