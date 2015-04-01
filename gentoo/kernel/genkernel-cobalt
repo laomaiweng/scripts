@@ -50,3 +50,9 @@ then
     fi
 fi
 
+emerge -av @module-rebuild
+
+echo
+echo "Done."
+echo
+
