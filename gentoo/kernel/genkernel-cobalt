@@ -21,7 +21,7 @@ then
 fi
 
 
-genkernel --save-config --mrproper --install --symlink --no-ramdisk-modules --no-all-ramdisk-modules --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --mountboot --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --lvm --no-mdadm --no-dmraid --no-luks --kernname="cobalt" --no-firmware --compress-initramfs-type="gzip" all
+genkernel --save-config --no-mrproper --clean --install --symlink --no-ramdisk-modules --no-all-ramdisk-modules --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --mountboot --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --lvm --no-mdadm --no-dmraid --no-luks --kernname="cobalt" --no-firmware --compress-initramfs-type="gzip" all
 
 
 if (( $? == 0 ))
