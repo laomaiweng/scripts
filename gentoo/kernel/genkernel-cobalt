@@ -1,8 +1,22 @@
 #!/bin/bash
 
+
+# Build full name
+[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
+
+# Source required modules (bashmod first, then use it for the others)
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/functions/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
+       with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
+source "$BASH_MODULES_SCRIPT"
+bashmod die
+
+
+# Environment variables
 KERNELDIR="${KERNELDIR:-/usr/src/linux}"
 KERNELCONF="${KERNELCONF:-$KERNELDIR/.config.cobalt}"
 
+
+# Display help
 if [[ "$1" == "-h" || "$1" == "--help" ]]
 then
     cat <<- _EOF_
@@ -16,14 +30,37 @@ then
 	    $KERNELDIR
 	using configuration:
 	    $KERNELCONF
+
+    Options:
+        -m | --no-emerge    don't emerge @module-rebuild
 	_EOF_
     exit
 fi
 
+# Process options
+getopt -T &> /dev/null
+(( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
+getopt="$(getopt -n "${0##*/}" -l no-emerge -o +m -- "$@")"
+(( $? != 0 )) && exit 1
+eval set -- "$getopt"
+emerge=true
+while true
+do
+    case "$1" in
+        -m|--no-emerge) emerge=false ;;
+        --) shift ; break ;;
+        *) die "getopt failure" ;;
+    esac
+    shift
+done
+(( $# > 0 )) && die "unhandled arguments: $@"
 
+
+# Build the kernel
 genkernel --save-config --no-mrproper --clean --install --symlink --no-ramdisk-modules --no-all-ramdisk-modules --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --mountboot --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --lvm --no-mdadm --no-dmraid --no-luks --kernname="cobalt" --no-firmware --compress-initramfs-type="gzip" all
 
 
+# Append files to the initramfs
 if (( $? == 0 ))
 then
     echo
@@ -59,11 +96,12 @@ then
     fi
 fi
 
-if (( $? == 0 ))
+# Emerge external modules
+if $emerge
 then
     echo
     echo
-    emerge -av @module-rebuild
+    emerge --quiet-build y -k @module-rebuild
 fi
 
 echo
