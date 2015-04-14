@@ -12,6 +12,14 @@
 source "$BASH_MODULES_SCRIPT"
 bashmod die
 
+# Check for required utilities
+declare -a missing
+for u in getopt mktemp awk wget xmllint vilistextum exiv2
+do
+    [[ -z "$(command -v "$u")" ]] && missing+=("$u")
+done
+(( ${#missing[@]} )) && die "missing utilities: ${missing[@]}"
+
 # Check the arguments
 if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
 then
