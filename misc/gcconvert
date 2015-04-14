@@ -9,7 +9,7 @@ then
 fi
 
 # Source some useful functions
-source ${0%/*}/../bash/functions/url
+source ${0%/*}/../bash/modules/url
 
 # Switch to C locale (Google returns some weird characters which we'd have to convert from ISO8859-1 to UTF-8 otherwise)
 export LANG=C
