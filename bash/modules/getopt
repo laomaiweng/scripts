@@ -1,0 +1,9 @@
+#!/bin/bash
+# getopt - wrapper module for agriffis' pure-getopt
+
+# Location of this script (for reference in the function, not exported)
+[[ "${BASH_SOURCE:0:1}" == "/" ]] && self="$BASH_SOURCE" || self="$PWD/$BASH_SOURCE"
+
+# Source pure-getopt
+source "${self%/*}/subs/pure-getopt/getopt.bash"
+
