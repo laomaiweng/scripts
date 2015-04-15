@@ -4,22 +4,90 @@
 
 # Paths to search for Bash modules
 export BASH_MODULES_PATH
+# Loaded Bash modules (do not export!)
+declare -a BASH_MODULES
 
 # Location of this script (for reference in the function, not exported)
 [[ "${BASH_SOURCE:0:1}" == "/" ]] && BASH_MODULES_SOURCE="$BASH_SOURCE" || BASH_MODULES_SOURCE="$PWD/$BASH_SOURCE"
 
 
 function bashmod() {
+    ##
+    ## Prologue
+    ##
+
     # Help message
-    if [[ $# != 1 || "$1" == "--help" || "$1" == "-h" ]]
+    if (( $# == 0 )) || [[ "$1" == "--help" || "$1" == "-h" ]]
     then
-        echo "  Usage: $FUNCNAME <module name>"
-        echo "Find and source the given Bash module."
-        echo
-        echo "Modules are looked for in directories specified in the"
-        echo "BASH_MODULES_PATH environment variable."
+        cat <<- EOT
+		  Usage: $FUNCNAME <module name>
+		         $FUNCNAME <action>
+		Find and source a Bash module, or list available/loaded Bash modules.
+		
+		Modules are looked for in directories specified in the
+		BASH_MODULES_PATH environment variable.
+		
+		Available actions:
+		  -l | --list-available     list available modules
+		  -L | --list-loaded        list loaded modules
+		
+		EOT
         return
     fi
+
+    # Parse options
+    local getopt
+    getopt -T &> /dev/null
+    (( $? == 4 )) || { echo "Error: your getopt version is too old, get the enhanced getopt from util-linux!" >&2 ; exit 1 ; }
+    getopt="$(getopt -n "$FUNCNAME" -l list-available,list-loaded -o +lL -- "$@")"
+    (( $? == 0 )) || exit 1
+    eval set -- "$getopt"
+
+    local action=load
+    while true
+    do
+        case "$1" in
+            -l|--list-available) action=list_available ;;
+            -L|--list-loaded) action=list_loaded ;;
+            --) shift ; break ;;
+            *) echo "Error: getopt internal error!" >&2 ; exit 1 ;;
+        esac
+        shift
+    done
+
+    # Process actions
+    case "$action" in
+        load) (( $# < 1 )) && { echo "Error: missing module" >&2 ; exit 1 ; } ;;
+        list_available)
+            # Loop over all module locations
+            local p m
+            for p in ${BASH_MODULES_PATH-${BASH_MODULES_SOURCE%/*}}
+            do
+                # Ignore empty and non-existent paths
+                [[ -z "$p" || ! -d "$p" ]] && continue
+                # Print all modules
+                for m in "$p"/*
+                do
+                    [[ -f "$m" ]] && echo "${m##*/}"
+                done
+            done | sort -u
+            return 0
+            ;;
+        list_loaded)
+            # Print loaded modules
+            local m
+            for m in "${BASH_MODULES[@]}"
+            do
+                echo "$m"
+            done | sort -u
+            return 0
+            ;;
+        *) echo "Error: internal error!" >&2 ; exit 1 ;;
+    esac
+
+    ##
+    ## Module loading
+    ##
 
     # Save and alter IFS to parse BASH_MODULES_PATH
     local oldifs="$IFS"
@@ -38,6 +106,7 @@ function bashmod() {
         then
             # Source it
             source "$p/$1"
+            BASH_MODULES+=("$1")
             # Set status and leave
             rc=0
             break
