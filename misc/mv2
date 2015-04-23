@@ -12,7 +12,7 @@ done
 # Retrieve the arguments
 if (( $# < 2 ))
 then
-    cat <<- _EOF_
+    cat <<- EOT
 	  Usage: ${0##*/} [options] <source> <destination>
 	
 	Rename <source> to <destination>.
@@ -21,7 +21,8 @@ then
 	Otherwise mv(1) is used.
 	
 	[options] are passed directly to mv(1).
-	_EOF_
+	EOT
+    exit
 fi
 src="$1"
 dst="$2"
