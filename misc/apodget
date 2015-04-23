@@ -7,10 +7,18 @@
 [[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
 
 # Source required modules (bashmod first, then use it for the others)
-[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/functions/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/modules/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
        with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
 source "$BASH_MODULES_SCRIPT"
 bashmod die
+
+# Check for required utilities
+declare -a missing
+for u in getopt mktemp awk wget xmllint vilistextum exiv2
+do
+    [[ -z "$(command -v "$u")" ]] && missing+=("$u")
+done
+(( ${#missing[@]} )) && die "missing utilities: ${missing[@]}"
 
 # Check the arguments
 if [[ $# == 0 || "$1" == "-h" || "$1" == "--help" ]]
