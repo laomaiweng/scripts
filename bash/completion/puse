@@ -1,0 +1,282 @@
+# puse Bash Shell Command Completion
+#
+
+# also defined in bash_completion proper however, will produce command
+# not found warnings when this is only enabled "locally" so we define it
+# here as well.
+have()
+{
+    unset -v have
+    PATH=$PATH:/sbin:/usr/sbin:/usr/local/sbin type $1 >&/dev/null && have="yes"
+}
+
+#
+# Retrieve PORTDIR/PORTDIR_OVERLAY location from user's make.conf or, if it
+# is not defined there, from make.globals.
+#
+_portdir()
+{
+    (
+    source /usr/share/portage/config/make.globals 2>/dev/null
+    source /etc/make.conf 2>/dev/null
+    source /etc/portage/make.conf 2>/dev/null
+
+    echo ${PORTDIR}
+    if [[ $1 == '-o' ]] ; then
+        echo ${PORTDIR_OVERLAY}
+    fi
+    )
+}
+
+# like _pkgname but completes on package names only (no category)
+_pkgname_only()
+{
+    local i pd
+    local cur="$1"
+    shift
+    local dir="$@"
+
+    COMPREPLY=($(compgen -W "$(\
+        for pd in $dir ; do \
+            builtin cd ${pd}; \
+            for i in *-*/${cur}*; do \
+                [[ -d ${i} ]] && { local x=${i##*/} ; echo ${x%-[0-9]*}; } \
+            done ; \
+        done)" -- ${cur}))
+}
+
+#
+# This function completes package names.
+#
+# usage: _pkgname <mode> <current-token>
+#
+# Where mode is one of:
+#   -A  Search all available packages (except for those in the overlays)
+#   -I  Only search the installed packages
+#
+_pkgname()
+{
+    local mode cur portdir only
+    mode="$1"
+    cur="$2"
+    portdir=$(_portdir -o)
+    # Ignore '=' at the beginning of the current completion
+    [[ ${cur:1:1} == "=" ]] && cur=${cur:2}
+    [[ ${cur:0:1} == "=" ]] && cur=${cur:1}
+    case $mode in
+    -I)
+        # Complete either the category or the complete package name
+        if [[ $cur == */* ]]; then
+        COMPREPLY=($(builtin cd /var/db/pkg; compgen -W "$(compgen -G "$cur*" )" -- $cur))
+        else
+        COMPREPLY=($(builtin cd /var/db/pkg; compgen -W "$(compgen -G "$cur*" -S /)" -- $cur))
+        fi
+        # We may just have finished completing the category.
+        # Make sure there isn't anything more to complete now.
+        if [[ ${#COMPREPLY[@]} == 1 ]]; then
+        COMPREPLY=($(builtin cd /var/db/pkg; compgen -W "$(compgen -G "$COMPREPLY*")" -- $cur))
+        fi
+
+            if [[ -z "${COMPREPLY}" ]] ; then
+                only=1
+                _pkgname_only ${cur} /var/db/pkg
+            fi
+        ;;
+    -A)
+        # Complete either the category or the complete package name
+        if [[ $cur == */* ]]; then
+            # Once the category has been completed, it's safe to use ${portdir}
+            # to continue completion.
+                local ww=$(\
+                    for pd in ${portdir} ; do
+                        builtin cd ${pd};
+                        compgen -W "$(compgen -G "${cur}*")" -- "${cur}" ;
+                    done)
+                COMPREPLY=($(\
+                    for x in ${ww}; do echo $x; done|sort -u
+                        ))
+            # When we've completed most of the name, also display the version for
+            # possible completion.
+            if [[ ${#COMPREPLY[@]} -le 1 || ${cur:${#cur}-1:1} == "-" ]] \
+                && [[ ${cur} != */ ]]; then
+                    # Use the portage cache to complete specific versions from
+                    COMPREPLY=(${COMPREPLY[@]} $(
+                        for pd in ${portdir}; do
+                            if [[ -d ${pd}/metadata/md5-cache ]]; then
+                                builtin cd ${pd}/metadata/md5-cache
+                                compgen -W "$(compgen -G "${cur}*")" -- "${cur}"
+                            elif [[ -d ${pd}/metadata/cache ]]; then
+                                builtin cd ${pd}/metadata/cache
+                                compgen -W "$(compgen -G "${cur}*")" -- "${cur}"
+                            fi
+                        done
+                    ))
+            fi
+        else
+            # 1. Collect all the categories among ${portdir}
+            local ww=$(\
+                for pd in ${portdir}; do
+                    builtin cd ${pd};
+                    compgen -X "!@(*-*|virtual)" -S '/' -G "$cur*";
+                done)
+
+            # 2. Now ugly hack to delete duplicate categories
+            local w x
+            for x in ${ww} ; do w="${x}\n${w}"; done
+            local words=$(echo -e ${w} | sort -u)
+
+            COMPREPLY=($(compgen -W "$words" -- $cur))
+
+            if [[ ${#COMPREPLY[@]} == 1 ]]; then
+                COMPREPLY=($(compgen -W "$(
+                    for pd in ${portdir}; do
+                        if [[ -d ${pd}/metadata/md5-cache ]]; then
+                            builtin cd ${pd}/metadata/md5-cache
+                            compgen -G "$COMPREPLY*"
+                        elif [[ -d ${pd}/metadata/cache ]]; then
+                            builtin cd ${pd}/metadata/cache
+                            compgen -G "$COMPREPLY*"
+                        fi
+                    done
+                )" -- $cur))
+            fi
+        fi
+
+            if [[ -z "${COMPREPLY}" ]] ; then
+                only=1
+                _pkgname_only ${cur} ${portdir}
+            fi
+        ;;
+    *)
+        # Somebody screwed up! :-)
+        ;;
+    esac
+    # 'equery' wants an '=' in front of specific package versions.
+    # Add it if there is only one selected package and it isn't there already.
+    if [[ ${#COMPREPLY[@]} == 1 && ${COMP_WORDS[COMP_CWORD]:0:1} != "=" ]]
+    then
+        [[ -z "${only}" ]] && COMPREPLY=("="$COMPREPLY)
+    fi
+}
+
+#
+# This function completes USE flags
+#
+# usage: _useflag <current-token> <package>
+#
+_useflag()
+{
+    local cur package portdir glob loc prefix
+    cur="${1#[-+%?]}"
+    [[ "$cur" == "$1" ]] && prefix= || prefix="${1:0:1}"
+    package="$2"
+    portdir="$(_portdir)"
+    [[ -f "${portdir}"/profiles/use.desc ]] || return 0
+    [[ -f "${portdir}"/profiles/use.local.desc ]] || return 0
+    glob="$(sed -n -e 's/^\([^ ]\+\) - .*$/\1/p' "${portdir}"/profiles/use.desc)"
+    loc="$(sed -n -e 's/^[^ ]\+:\([^ ]*\) - .*$/\1/p' "${portdir}"/profiles/use.local.desc)"
+    COMPREPLY=($(compgen -W "$glob $loc" -P "$prefix" -- "$cur"))
+}
+
+#
+# Bash completion for the 'puse'/'pkey'/'pmask'/'plic' commands
+#
+_puse_()
+{
+    local flagcomp cur prev portdir package IFS lastchar i
+    flagcomp="$1"
+    portdir="$(_portdir)"
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # Check if a package name was already given
+    package=
+    for ((i=1; i<$COMP_CWORD; ++i))
+    do
+        # Skip arguments to options
+        case "${COMP_WORDS[$i]}" in
+            -m|--mode|-f|--file|-c|--comment) ((++i)) ; continue ;;
+        esac
+        [[ "${COMP_WORDS[$i]}" == */* ]] && { package="${COMP_WORDS[$i]}" ; break ; }
+    done
+
+    if [[ -z "$package" ]]
+    then
+        # Package not given, complete either an option or a package
+        case "$cur" in
+            -*)
+                COMPREPLY=($(compgen -W "-m --mode -f --file -c --comment -v --verbose -h --help -V --version" -- "$cur"))
+                ;;
+            *)
+                case "$prev" in
+                    -m|--mode)
+                        COMPREPLY=($(compgen -W "use key mask lic" -- "$cur"))
+                        ;;
+                    -f|--file)
+                        # Generate file matches, then append / to directories and nothing to files (also handle spaces correctly)
+                        COMPREPLY=($(compgen -f -- "$cur"))
+
+                        IFS=$'\n'
+                        lastchar=
+                        if [[ ${#COMPREPLY[@]} = 1 ]]
+                        then
+                            [[ -d "${COMPREPLY[0]}" ]] && { lastchar=/ ; compopt -o nospace ; }
+                            COMPREPLY=($(printf %q%s "${COMPREPLY[0]}" "$lastchar"))
+                        else
+                            for ((i=0; i < ${#COMPREPLY[@]}; i++))
+                            do
+                                [[ -d "${COMPREPLY[$i]}" ]] && COMPREPLY[$i]="${COMPREPLY[$i]}/"
+                            done
+                        fi
+                        ;;
+                    -c|--comment)
+                        # Uncompletable
+                        ;;
+                    -*)
+                        # Nothing to complete anymore
+                        ;;
+                    *)
+                        # Package completion
+                        _pkgname -A "$cur"
+                        ;;
+                esac
+                ;;
+        esac
+    else
+        # Package already given, complete a flag
+        [[ -n "$flagcomp" ]] && $flagcomp "$cur" "$package"
+    fi
+    return 0
+}
+
+have puse && {
+_puse()
+{
+    _puse_ _useflag
+}
+complete -F _puse puse
+}
+have pkey && {
+_pkey()
+{
+    _puse_
+}
+complete -F _pkey pkey
+}
+have pmask && {
+_pmask()
+{
+    _puse_
+}
+complete -F _pmask pmask
+}
+have plic && {
+_plic()
+{
+    _puse_
+}
+complete -F _plic plic
+}
+
+# vim: ft=sh:et:ts=4:sw=4
