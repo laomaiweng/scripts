@@ -4,8 +4,11 @@
 
 # Paths to search for Bash modules
 export BASH_MODULES_PATH
-# Loaded Bash modules (do not export!)
+# Loaded Bash modules
 declare -a BASH_MODULES
+# Notes:
+# * this is NOT a global (-g) declaration, hence "bashmod bashmod" doesn't add "bashmod" to the global BASH_MODULES
+# * DO NOT EXPORT BASH_MODULES! otherwise subshells will have the same BASH_MODULES but no actually loaded modules
 
 # Location of this script (for reference in the function, not exported)
 [[ "${BASH_SOURCE:0:1}" == "/" ]] && BASH_MODULES_SOURCE="$BASH_SOURCE" || BASH_MODULES_SOURCE="$PWD/$BASH_SOURCE"
@@ -59,6 +62,8 @@ function bashmod() {
     case "$action" in
         load) (( $# < 1 )) && { echo "Error: missing module" >&2 ; exit 1 ; } ;;
         list_available)
+            # Locally alter IFS to parse BASH_MODULES_PATH
+            local IFS=:
             # Loop over all module locations
             local p m
             for p in ${BASH_MODULES_PATH-${BASH_MODULES_SOURCE%/*}}
@@ -73,6 +78,7 @@ function bashmod() {
             done | sort -u
             return 0
             ;;
+
         list_loaded)
             # Print loaded modules
             local m
@@ -82,6 +88,7 @@ function bashmod() {
             done | sort -u
             return 0
             ;;
+
         *) echo "Error: internal error!" >&2 ; exit 1 ;;
     esac
 
@@ -89,9 +96,8 @@ function bashmod() {
     ## Module loading
     ##
 
-    # Save and alter IFS to parse BASH_MODULES_PATH
-    local oldifs="$IFS"
-    IFS=:
+    # Locally alter IFS to parse BASH_MODULES_PATH
+    local IFS=:
 
     # Loop over the paths to search the module for
     # Use bashmod script directory as default value if not defined
@@ -112,9 +118,6 @@ function bashmod() {
             break
         fi
     done
-
-    # Restore IFS
-    IFS="$oldifs"
 
     # Not found: fatal
     if (( $rc ))
