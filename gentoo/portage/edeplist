@@ -1,0 +1,30 @@
+#!/bin/bash
+# edeplist - formatted `equery depend -D`
+
+# Help!
+if (( $# == 0 )) || [[ "$1" == "-h" || "$1" == "--help" ]]
+then
+    cat <<- EOT
+	  Usage: ${0##*/} <packages>
+	
+	Get the list of packages depending on the given packages, formatted as a
+	space-separated list which can directly be fed to \`emerge -a --depclean\`
+	(remove the -a if you feel lucky). The given packages are also included in
+	the list.
+	
+	This is basically just a formatted \`equery depend -D\`.
+	EOT
+    exit
+fi
+
+{
+    # Print the given packages
+    for p in "$@"
+    do
+        echo "$p"
+    done
+
+    # Print the packages depending on them (uniq-ed)
+    equery d -D "$@" | sed -ne 's/^ *\([^-]\+-[^/]\+[^ ]\+\).*$/=\1/p' | sort -u
+} | tr '\n' ' '
+echo    # Trailing newline
