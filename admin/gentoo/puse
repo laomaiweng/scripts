@@ -46,7 +46,7 @@ namespace import ::lwutils::die ::lwutils::lremove
 #############################################################################
 
 # Version number
-set version "0.3.2"
+set version "0.3.3"
 
 # Operating mode (set by [SetupMode])
 set mode ""
@@ -83,7 +83,7 @@ set queryonly true
 # DEPEND atom regexps (see PMS and ebuild(5) for specification)
 set constraint_rx   {(?:<|<=|=|>=|>|~)}
 set category_rx     {(?:[A-Za-z0-9_][A-Za-z0-9+_.-]*)}
-set package_rx      {(?:[A-Za-z0-9_][A-Za-z0-9+_]*(?:-(?:[A-Za-z0-9+_]*-)*[A-Za-z+_]*)?)}
+set package_rx      {(?:[A-Za-z0-9_][A-Za-z0-9+_]*(?:-(?:[A-Za-z0-9+_]*-)*(?:[A-Za-z0-9+_]*[A-Za-z+_][A-Za-z0-9+_]*)*)?)}
 set version_rx      {(?:[0-9]+(?:\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc|p)[0-9]*)?)}
 set revision_rx     {(?:r[0-9]+)}
 set slot_rx         {(?::(?:[A-Za-z0-9_]|[A-Za-z0-9+_.-]*)(?:/(?:[A-Za-z0-9_]|[A-Za-z0-9+_.-]*))?)}
