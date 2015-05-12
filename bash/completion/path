@@ -1,0 +1,78 @@
+# path Bash Shell Command Completion
+#
+
+# also defined in bash_completion proper however, will produce command
+# not found warnings when this is only enabled "locally" so we define it
+# here as well.
+have()
+{
+    unset -v have
+    PATH=$PATH:/sbin:/usr/sbin:/usr/local/sbin type $1 >&/dev/null && have="yes"
+}
+
+#
+# Bash completion for the 'path' function
+#
+have path && {
+_path()
+{
+    local cur prev action options
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # 1st word: complete an action
+    if (( $COMP_CWORD == 1 ))
+    then
+        COMPREPLY=($(compgen -W "show append prepend strip" -- "$cur"))
+    else
+        # Action set: complete an option, pathvar or path
+        action="${COMP_WORDS[1]}"
+        case "$cur" in
+            -)
+                # Complete short/long options
+                options="-e --export -f --force -n --nocolor -v --verbose"
+                case "$action" in
+                    show) options+=" -r --reset" ;;
+                    strip) options+=" -g --glob" ;;
+                esac
+                COMPREPLY=($(compgen -W "$options" -- "$cur"))
+                ;;
+            --*)
+                # Complete long options
+                options="--export --force --nocolor --verbose"
+                case "$action" in
+                    show) options+=" --reset" ;;
+                    strip) options+=" --glob" ;;
+                esac
+                COMPREPLY=($(compgen -W "$options" -- "$cur"))
+                ;;
+            -*)
+                # Complete short options
+                COMPREPLY=(e f n v)
+                case "$action" in
+                    show) COMPREPLY+=(r) ;;
+                    strip) COMPREPLY+=(g) ;;
+                esac
+                compopt -o nospace
+                ;;
+            *)
+                # Check if a pathvar was already given
+                if [[ "$prev" == "$action" || "$prev" == -* ]]
+                then
+                    # Complete a pathvar
+                    COMPREPLY=($(compgen -W "bin PATH lib LD_LIBRARY_PATH pkc PKG_CONFIG_PATH inc C_INCLUDE_PATH CPLUS_INCLUDE_PATH man MANPATH ${PATH_CUSTOM_VARIABLES[*]}" -- "$cur"))
+                elif [[ "$action" != "show" ]]
+                then
+                    # Complete a path
+                    compopt -o nospace
+                    COMPREPLY=($(compgen -d -- "$cur"))
+                fi
+                ;;
+        esac
+    fi
+}
+complete -F _path path
+}
+
+# vim: ft=sh:et:ts=4:sw=4
