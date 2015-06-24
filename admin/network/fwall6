@@ -2,64 +2,73 @@
 
 ## http://www.ibm.com/developerworks/edu/l-dw-linuxfw-i.html
 
-# Our complete stateful firewall script.  This firewall can be customized for
-# a laptop, workstation, router or even a server. :)
+# Our complete stateful firewall script. This firewall can be customized for a
+# laptop, workstation, router or even a server. :)
 
 # All your network interfaces, including lo.
-#INTERFACES="lo eth0 wlan0"
-INTERFACES="lo eth0"
+#interfaces=(lo eth0 wlan0)
+interfaces=(lo enp4s0 wlp0s29u1u8)
 
 # The interfaces that provides your "uplink".
-#UPLINK="eth0 wlan0"
-UPLINK="eth0"
+#uplink=(eth0 wlan0)
+uplink=(enp4s0 wlp0s29u1u8)
 
 # The local (ie., trusted) interfaces.
-LOCAL="lo"
+local_interfaces=(lo)
 
-# Change this line so that it lists the assigned numbers or symbolic names (from
-# /etc/services) of all the services that you'd like to provide to the general
-# public.  If you don't want any services enabled, set it to "".
-SERVICES_TCP=""
-SERVICES_UDP=""
+# Change this line so that it lists the assigned numbers or symbolic names
+# (from /etc/services) of all the services that you'd like to provide to the
+# general public. If you don't want any services enabled, set it to ().
+services_tcp=()
+services_udp=()
+
+# Our default INPUT policy: DROP.
+default_input_policy=DROP
 
 
-function start_fw6
-{
+function start_fw6() {
     echo -n "Starting IPv6 firewall... "
 
-    # Input table default policy : DROP.
-    ip6tables -P INPUT DROP
+    local has_ssh_22=false
+
+    # Input table default policy.
+    ip6tables -P INPUT "$default_input_policy"
 
     # Accept local (trusted) traffic.
-    for x in ${LOCAL}
+    for i in "${local_interfaces[@]}"
     do
-        ip6tables -A INPUT -i ${x} -j ACCEPT
+        ip6tables -A INPUT -i "$i" -j ACCEPT
     done
 
     # Accept ESTABLISHED or RELATED connections.
     ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
     # Enable public access to global services.
-    for x in ${SERVICES_TCP}
+    for s in "${services_tcp[@]}"
     do
-        ip6tables -A INPUT -p tcp --dport ${x} -m conntrack --ctstate NEW -j LOG --log-prefix "[ip6tables] TCP service:"
-        ip6tables -A INPUT -p tcp --dport ${x} -m conntrack --ctstate NEW -j ACCEPT
+        ip6tables -A INPUT -p tcp --dport "$s" -m conntrack --ctstate NEW -j LOG --log-prefix "[ip6tables] $s TCP svc:"
+        ip6tables -A INPUT -p tcp --dport "$s" -m conntrack --ctstate NEW -j ACCEPT
+        # Check whether ssh is part of our service set
+        [[ "$s" == "ssh" ]] && has_ssh_22=true
     done
-    for x in ${SERVICES_UDP}
+    for s in "${lan_services_udp[@]}"
     do
-        ip6tables -A INPUT -p udp --dport ${x} -m conntrack --ctstate NEW -j LOG --log-prefix "[ip6tables] UDP service:"
-        ip6tables -A INPUT -p udp --dport ${x} -m conntrack --ctstate NEW -j ACCEPT
+        ip6tables -A INPUT -p udp --dport "$s" -m conntrack --ctstate NEW -j LOG --log-prefix "[ip6tables] $s UDP svc:"
+        ip6tables -A INPUT -p udp --dport "$s" -m conntrack --ctstate NEW -j ACCEPT
     done
 
     # Log and reject attempts at SSH connection on port 22 separately.
-    ip6tables -A INPUT -p tcp --dport ssh -m conntrack --ctstate NEW -j LOG --log-prefix "[ip6tables] ssh22fail:"
-    ip6tables -A INPUT -p tcp --dport ssh -m conntrack --ctstate NEW -j DROP
+    if ! $has_ssh_22
+    then
+        ip6tables -A INPUT -p tcp --dport ssh -m conntrack --ctstate NEW -j LOG --log-prefix "[ip6tables] ssh22fail:"
+        ip6tables -A INPUT -p tcp --dport ssh -m conntrack --ctstate NEW -j "$default_input_policy"
+    fi
 
     # Other rejected attempts.
     ip6tables -A INPUT -p tcp -j LOG --log-prefix "[ip6tables] bad TCP:"
     ip6tables -A INPUT -p udp -j LOG --log-prefix "[ip6tables] bad UDP:"
-    ip6tables -A INPUT -p tcp -j DROP
-    ip6tables -A INPUT -p udp -j DROP
+    ip6tables -A INPUT -p tcp -j "$default_input_policy"
+    ip6tables -A INPUT -p udp -j "$default_input_policy"
 
     # Accept ICMPv6 packets, which are required for MAC address resolution.
     ip6tables -A INPUT -p icmpv6 -j ACCEPT
@@ -73,8 +82,7 @@ function start_fw6
     echo "done"
 }
 
-function stop_fw6
-{
+function stop_fw6() {
     echo -n "Stopping IPv6 firewall... "
 
     ip6tables -F INPUT
@@ -96,7 +104,6 @@ then
     stop_fw6
     start_fw6
 else
-    echo "SYNTAX: ${0##*/} <start|stop|restart>"
+    echo "Syntax: ${0##*/} <start|stop|restart>"
 fi
 
-exit 0
