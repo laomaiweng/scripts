@@ -28,7 +28,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]] ; then
 	
 	The kernel is configured and built in \$KERNELDIR (default "/usr/src/linux"):
 	    $KERNELDIR
-	using configuration \$KERNELCONF (default "\$KERNELDIR/.config/cobalt"):
+	using configuration \$KERNELCONF (default "\$KERNELDIR/.config.cobalt"):
 	    $KERNELCONF
 	The Grub configuration file is \$GRUBCFG (default "/boot/grub/grub.cfg"):
 	    $GRUBCFG
