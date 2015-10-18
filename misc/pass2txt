@@ -13,6 +13,21 @@ fi
 gpg=gpg2
 pass_dir="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
 
+# Define function decrypt_entry() to decrypt a single file and print its contents
+function decrypt_entry() {  # 1: file
+    local c
+    local t
+    # Extract the entry name
+    c="${1#$pass_dir/}"
+    c="${c%.gpg}"
+    # Decrypt the entry
+    t="$("$gpg" --quiet --batch --decrypt "$f")" && echo "$c" >&2 || { echo "FAIL $c" >&2 ; return ; }
+    # Print the entry
+    printf "[%s]\n" "$c"
+    sed -e '/^[[:space:]]*$/d' <<< "$t"
+    printf "\n\n"
+}
+
 # Enable globstar to list all files under $pass_dir
 shopt -s globstar
 
@@ -25,12 +40,7 @@ shopt -s globstar
     do
         [[ -d "$f" ]] && continue
         [[ "${f:(-4)}" != ".gpg" ]] && continue
-        c="${f#$pass_dir/}"
-        c="${c%.gpg}"
-        echo "$c" >&2
-        printf "[%s]\n" "$c"
-        "$gpg" --quiet --batch --decrypt "$f" | sed -e '/^[[:space:]]*$/d'
-        printf "\n\n"
+        decrypt_entry "$f"
     done
 } | "$gpg" --encrypt --armor > "${1:-/dev/stdout}"
 
