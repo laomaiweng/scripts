@@ -3,9 +3,16 @@
 
 if [[ "$1" == "-h" || "$1" == "--help" ]]
 then
-    echo "  Usage: ${0##*/} [file]"
-    echo
-    echo "Convert a pass-managed password store into a single encrypted text file"
+    cat <<- _EOF_
+	  Usage: ${0##*/} [output file]
+	
+	Convert a pass-managed password store into a single encrypted text file.
+	
+	Password store location:     \$PASSWORD_STORE_DIR
+	                             (default: \$HOME/.password-store)
+	GPG options for input file:  --quiet --batch --decrypt
+	GPG options for output file: --encrypt --armor
+	_EOF_
     exit
 fi
 
@@ -13,7 +20,8 @@ fi
 gpg=gpg2
 pass_dir="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
 
-# Define function decrypt_entry() to decrypt a single file and print its contents
+# Define functions
+# decrypt_entry(file): decrypt a single file and print its contents
 function decrypt_entry() {  # 1: file
     local c
     local t
