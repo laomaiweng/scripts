@@ -1,0 +1,20 @@
+#!/bin/bash
+# Awesome Run-On-Tag
+
+if (( $# < 2 )) || [[ "$1" == "-h" || "$1" == "--help" ]]
+then
+    echo "Usage: ${0##*/} <tag> <command>" >&2
+    exit
+fi
+
+screen=1
+tag="$1"
+(( $tag > 0 )) || { echo "error: invalid tag" >&2 ; exit 1 ; }
+shift
+cli="$*"
+echo "$cli" >> ~/.awesome-rot_history
+awesome-client <<- EOF
+	local awful = require("awful")
+	awful.tag.viewonly(tags[$screen][$tag])
+	awful.util.spawn_with_shell("cd $PWD ; $cli")
+	EOF
