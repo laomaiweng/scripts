@@ -1,24 +1,52 @@
 #!/bin/bash
 # Convert a pass-managed password store into a single encrypted text file
 
+# Define constants
+gpg=gpg2
+pass_dir="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
+declare -a gpg_input_options=(--quiet --batch --decrypt)
+declare -a gpg_output_options=(--batch --encrypt --armor)
+
+# Check the arguments
 if [[ "$1" == "-h" || "$1" == "--help" ]]
 then
     cat <<- _EOF_
-	  Usage: ${0##*/} [output file]
+	  Usage: ${0##*/} [options]
+	
+	Options:
+	  -o | --output         output file (default is stdout)
+	  -r | --recipient      add a GPG recipient (may be used multiple times)
 	
 	Convert a pass-managed password store into a single encrypted text file.
 	
 	Password store location:     \$PASSWORD_STORE_DIR
 	                             (default: \$HOME/.password-store)
-	GPG options for input file:  --quiet --batch --decrypt
-	GPG options for output file: --encrypt --armor
+	GPG options for input file:  ${gpg_input_options[@]}
+	GPG options for output file: ${gpg_output_options[@]}
 	_EOF_
     exit
 fi
 
-# Define constants
-gpg=gpg2
-pass_dir="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
+# Process options
+getopt -T &> /dev/null
+(( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
+getopt="$(getopt -n "${0##*/}" -l recipient:,output: -o +r:o: -- "$@")"
+(( $? != 0 )) && exit 1
+eval set -- "$getopt"
+
+output=
+while true
+do
+    case "$1" in
+        -r|--recipient) gpg_output_options+=(-r "$2") ; shift ;;
+        -o|--output) output="$2" ; shift ;;
+        --) shift ; break ;;
+        *) die "internal error!" ;;
+    esac
+    shift
+done
+# Test for remaining arguments
+(( $# > 0 )) && die "too many arguments"
 
 # Define functions
 # decrypt_entry(file): decrypt a single file and print its contents
@@ -29,7 +57,7 @@ function decrypt_entry() {  # 1: file
     c="${1#$pass_dir/}"
     c="${c%.gpg}"
     # Decrypt the entry
-    t="$("$gpg" --quiet --batch --decrypt "$f")" && echo "$c" >&2 || { echo "FAIL $c" >&2 ; return ; }
+    t="$("$gpg" "${gpg_input_options[@]}" "$f")" && echo "$c" >&2 || { echo "FAIL $c" >&2 ; return ; }
     # Print the entry
     printf "[%s]\n" "$c"
     sed -e '/^[[:space:]]*$/d' <<< "$t"
@@ -40,7 +68,7 @@ function decrypt_entry() {  # 1: file
 shopt -s globstar
 
 # Clear the output file
-[[ -z "$1" ]] && rm -f "$1"
+[[ -z "$output" ]] && rm -f "$output"
 
 # Loop over all files, decrypt them and encrypt them back in a single text file (or stdout)
 {
@@ -50,5 +78,5 @@ shopt -s globstar
         [[ "${f:(-4)}" != ".gpg" ]] && continue
         decrypt_entry "$f"
     done
-} | "$gpg" --encrypt --armor > "${1:-/dev/stdout}"
+} | "$gpg" "${gpg_output_options[@]}" > "${output:-/dev/stdout}"
 
