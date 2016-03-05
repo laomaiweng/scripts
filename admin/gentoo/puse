@@ -1,18 +1,20 @@
 #!/usr/bin/env tclsh8.6
 #############################################################################
-#   puse/pkey/pmask/plic                                                    #
+#   puse/pkey/pmask/penv/plic                                               #
 #                                                                           #
-# Script for management of Gentoo Portage flag files.                       #
+# Script for management of Gentoo Portage package files.                    #
 # Respectful of file layout (category blocks, comments, blanks, ...).       #
 # Handles:                                                                  #
 #   * USE flags in package.use when called as 'puse'                        #
 #   * keywords in package.accept_keywords when called as 'pkey'             #
 #   * masks in package.mask when called as 'pmask'                          #
+#   * environments in package.env when called as 'penv'                     #
 #   * licenses in package.license when called as 'plic'                     #
 #                                                                           #
 # Atoms are parsed as per PMS EAPI 5, as DEPEND atoms.                      #
 #                                                                           #
 # History:                                                                  #
+#   v0.4    Diversification: handle environments                            #
 #   v0.3    Diversification: handle masks                                   #
 #   v0.2    Diversification: handle keywords and licenses                   #
 #   v0.1    Initial version: handle USE flags only                          #
@@ -46,7 +48,7 @@ namespace import ::lwutils::die ::lwutils::lremove
 #############################################################################
 
 # Version number
-set version "0.3.3"
+set version "0.4.0"
 
 # Operating mode (set by [SetupMode])
 set mode ""
@@ -90,7 +92,9 @@ set slot_rx         {(?::(?:[A-Za-z0-9_]|[A-Za-z0-9+_.-]*)(?:/(?:[A-Za-z0-9_]|[A
 set postfix_rx      {(?:\*)}
 set use_rx          {(?:[A-Za-z0-9][A-Za-z0-9+_@-]*)}
 set keyword_rx      {(?:~?[A-Za-z0-9_][A-Za-z0-9_-]*)}
+set environment_rx  {(?:[[:graph:]]+)}
 set license_rx      {(?:[[:graph:]]+)}
+# TODO: handle ::overlay syntax in package names
 
 
 #############################################################################
@@ -133,6 +137,7 @@ proc SetupMode {m} {
     global path
     global use_rx
     global keyword_rx
+    global environment_rx
     global license_rx
 
     # Switch according to the given mode, defaulting to "use" mode
@@ -165,6 +170,17 @@ proc SetupMode {m} {
             set flagdesc "mask"
             set flagspecrx {}
             set hasflags 0
+        }
+
+        "env" {
+            # Remember the operating mode
+            set mode "env"
+            # Setup variables
+            set path "/etc/portage/package.env"
+            set flagdesc "environment"
+            set flagspecrx "^(${flagspecstatusrx}?)(${environment_rx})\$"
+            # TODO: validate that the environment exists in /etc/portage/env/
+            set hasflags 1
         }
 
         "use" -
@@ -598,7 +614,7 @@ getopt flag arg $argv {
 Add or remove package-specific ${flagdesc}s.
 
 Options:
-  -m | --mode <mode>            operating mode ('use', 'key', 'mask' or 'lic')
+  -m | --mode <mode>            operating mode ('use', 'key', 'mask', 'env' or 'lic')
   -f | --file <file>            use <file> instead of the default
                                 $path
   -c | --comment <comment>      add <comment> at the end of the line;
