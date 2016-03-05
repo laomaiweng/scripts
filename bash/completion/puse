@@ -179,7 +179,7 @@ _useflag()
 }
 
 #
-# Bash completion for the 'puse'/'pkey'/'pmask'/'plic' commands
+# Bash completion for the 'puse'/'pkey'/'pmask'/'penv'/'plic' commands
 #
 _puse_()
 {
@@ -270,6 +270,13 @@ _pmask()
     _puse_
 }
 complete -F _pmask pmask
+}
+have penv && {
+_penv()
+{
+    _puse_
+}
+complete -F _penv penv
 }
 have plic && {
 _plic()
