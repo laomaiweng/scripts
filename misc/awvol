@@ -5,6 +5,7 @@
 # Volume setter and notifier for awesome, with naughty-fications.           #
 #                                                                           #
 # Version history:                                                          #
+#   v?      Handle missing backend                                          #
 #   v0.2    Add -t option to define the naughty-fication timeout            #
 #   v0.1    Initial version: get, set, mute/unmute/toggle                   #
 #############################################################################
@@ -19,7 +20,7 @@ bashmod die
 
 
 # Constants definitions
-version=0.2
+version=0.2+dev
 
 
 # Function definitions
@@ -27,11 +28,31 @@ function regexp_escape() { # 1:string
     sed -e 's/\./\\./g' -e 's,/,\/,g' <<< "$1"
 }
 
+function default_backend() {
+    for b in pulseaudio alsa
+    do
+        if check_backend "$b"
+        then
+            echo "$b"
+            return
+        fi
+    done
+    return 1
+}
+
+function check_backend() { # 1:backend
+    case "$1" in
+        alsa|amixer)         command -v amixer &>/dev/null ; return $? ;;
+        pa|pulseaudio|pactl) command -v pactl &>/dev/null ; return $? ;;
+    esac
+    return 1
+}
+
 function default_channel() { # 1:backend
     case "$1" in
         alsa|amixer)         echo "Master" ;;
         pa|pulseaudio|pactl) echo "$(pactl info | sed -ne '/^Default Sink:/ s/^Default Sink: //p')" ;;
-        *)                   die -r1 "invalid backend" ;;
+        *)                   return 1 ;;
     esac
 }
 
@@ -57,7 +78,7 @@ function volume_get() { # 1:backend 2:frontend 3:channel
     case "$frontend" in
         stdout)  echo "$message" ;;
         naughty) awesome-client - <<< "require('naughty').notify({ text='$(sed -e "s/'/\\'/g" <<< "$message")', title='Volume', timeout=$timeout})" ;;
-        *)       die -r1 "invalid frontend" ;;
+        *)       die "invalid frontend" ;;
     esac
 }
 
@@ -78,9 +99,9 @@ then
 	
 	Options:
 	    -b | --backend <tool>   select the audio backend tool:
-	                            alsa,amixer, pa,pulseaudio,pactl*
+	                            alsa,amixer, pa,pulseaudio,pactl    (default: $(default_backend))
 	    -f | --frontend <tool>  select the display frontend tool:
-	                            stdout, naughty*
+	                            stdout, naughty                     (default: naughty)
 	    -c | --channel <chan>   channel to operate on
 	                            refer to the backend documentation for details
 	    -t | --timeout <to>     timeout for the naughty-fication
@@ -97,7 +118,7 @@ GETOPT="$(getopt -n "${0##*/}" -l backend:,frontend:,channel:,timeout:,version -
 (( $? != 0 )) && exit 128
 eval set -- "$GETOPT"
 
-backend=pactl
+backend="$(default_backend)" || die "no available backend"
 frontend=naughty
 channel="$(default_channel "$backend")"
 channel_set=false
@@ -106,8 +127,8 @@ while true
 do
     case "$1" in
         -b|--backend)
-            backend="$2"
-            $channel_set || channel="$(default_channel "$backend")" || exit 1
+            check_backend "$2" && backend="$2" || die "invalid backend: $2"
+            $channel_set || channel="$(default_channel "$backend")" || die "no channel for backend: $backend"
             shift
             ;;
         -f|--frontend)
@@ -131,23 +152,23 @@ do
             shift
             break
             ;;
-        *) die -r1 "internal error!" ;;
+        *) die "internal error!" ;;
     esac
     shift
 done
 # Test for remaining arguments
-(( $# < 1 )) && die -r1 "missing action"
+(( $# < 1 )) && die "missing action"
 
 # Process the action
 case "$1" in
     get)
-        (( $# > 1 )) && die -r1 "too many arguments for action '$1'"
+        (( $# > 1 )) && die "too many arguments for action '$1'"
         volume_get "$backend" "$frontend" "$channel"
         ;;
 
     set)
-        (( $# < 1 )) && die -r1 "not enough arguments for action '$1'"
-        (( $# > 2 )) && die -r1 "too many arguments for action '$1'"
+        (( $# < 1 )) && die "not enough arguments for action '$1'"
+        (( $# > 2 )) && die "too many arguments for action '$1'"
         # Set the volume
         case "$backend" in
             alsa|amixer)
@@ -172,7 +193,7 @@ case "$1" in
         ;;
 
     mute|unmute|toggle)
-        (( $# > 1 )) && die -r1 "too many arguments for action '$1'"
+        (( $# > 1 )) && die "too many arguments for action '$1'"
         # Mute/unmute/toggle the volume
         case "$backend" in
             alsa|amixer)
