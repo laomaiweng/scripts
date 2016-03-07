@@ -5,7 +5,9 @@
 # Volume setter and notifier for awesome, with naughty-fications.           #
 #                                                                           #
 # Version history:                                                          #
-#   v?      Handle missing backend                                          #
+#   v0.3    Improve error handling of bad input/environment                 #
+#           Add -C option to select sound card                              #
+#           Tweak the amixer backend                                        #
 #   v0.2    Add -t option to define the naughty-fication timeout            #
 #   v0.1    Initial version: get, set, mute/unmute/toggle                   #
 #############################################################################
@@ -20,12 +22,16 @@ bashmod die
 
 
 # Constants definitions
-version=0.2+dev
+version=0.3
 
 
 # Function definitions
 function regexp_escape() { # 1:string
     sed -e 's/\./\\./g' -e 's,/,\/,g' <<< "$1"
+}
+
+function amixer() { # @:options
+    command amixer ${card:+-c "$card"} "$@"
 }
 
 function default_backend() {
@@ -56,24 +62,36 @@ function default_channel() { # 1:backend
     esac
 }
 
-function volume_get() { # 1:backend 2:frontend 3:channel
+function volume_get() {
     # Get the volume
-    case "$1" in
+    local get left right mono mute
+    case "$backend" in
         alsa|amixer)
-            get="$(amixer get "$3")"
+            get="$(amixer -M -- get "$channel")"
+            mono="$(sed -ne '/^  Mono:/ s/.*\[\([0-9]\+%\)\].*$/\1/p' <<< "$get")"
             left="$(sed -ne '/^  Front Left:/ s/.*\[\([0-9]\+%\)\].*$/\1/p' <<< "$get")"
             right="$(sed -ne '/^  Front Right:/ s/.*\[\([0-9]\+%\)\].*$/\1/p' <<< "$get")"
             mute="$(sed -ne '/^  Front Left:/ s/.*\[\(on\|off\)\]$/\1/p' <<< "$get")"
+            [[ -z "$mute" ]] && mute="$(sed -ne '/^  Mono:/ s/.*\[\(on\|off\)\]$/\1/p' <<< "$get")"
             ;;
         pa|pulseaudio|pactl)
             get="$(pactl list sinks)"
-            left="$(sed -ne '/Name: '"$(regexp_escape "$3")"'/,+7 {1,+6d; s/[[:blank:]]*Volume: front-left: [^/]*\/[[:space:]]*\([0-9]\+%\).*$/\1/p}' <<< "$get")"
-            right="$(sed -ne '/Name: '"$(regexp_escape "$3")"'/,+7 {1,+6d; s/[[:blank:]]*Volume: .*front-right: [^/]*\/[[:space:]]*\([0-9]\+%\).*$/\1/p}' <<< "$get")"
-            mute="$(sed -ne '/Name: '"$(regexp_escape "$3")"'/,+6 {1,+5d; s/[[:blank:]]*Mute: //p}' <<< "$get")"
+            left="$(sed -ne '/Name: '"$(regexp_escape "$channel")"'/,+7 {1,+6d; s/[[:blank:]]*Volume: front-left: [^/]*\/[[:space:]]*\([0-9]\+%\).*$/\1/p}' <<< "$get")"
+            right="$(sed -ne '/Name: '"$(regexp_escape "$channel")"'/,+7 {1,+6d; s/[[:blank:]]*Volume: .*front-right: [^/]*\/[[:space:]]*\([0-9]\+%\).*$/\1/p}' <<< "$get")"
+            mute="$(sed -ne '/Name: '"$(regexp_escape "$channel")"'/,+6 {1,+5d; s/[[:blank:]]*Mute: //p}' <<< "$get")"
             ;;
     esac
     # Display it
-    local message="L: $left  R: $right"
+    local message
+    if [[ -n "$left" && -n "$right" ]]
+    then
+        message="L: $left  R: $right"
+    elif [[ -n "$mono" ]]
+    then
+        message="$mono"
+    else
+        die "unable to extract volume information"
+    fi
     [[ "$mute" == "yes" || "$mute" == "off" ]] && message+="  MUTE"
     case "$frontend" in
         stdout)  echo "$message" ;;
@@ -102,6 +120,8 @@ then
 	                            alsa,amixer, pa,pulseaudio,pactl    (default: $(default_backend))
 	    -f | --frontend <tool>  select the display frontend tool:
 	                            stdout, naughty                     (default: naughty)
+	    -C | --card <card>      sound card to operate on
+	                            refer to the backend documentation for details
 	    -c | --channel <chan>   channel to operate on
 	                            refer to the backend documentation for details
 	    -t | --timeout <to>     timeout for the naughty-fication
@@ -114,12 +134,13 @@ fi
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
-GETOPT="$(getopt -n "${0##*/}" -l backend:,frontend:,channel:,timeout:,version -o +b:f:c:t:V -- "$@")"
+GETOPT="$(getopt -n "${0##*/}" -l backend:,frontend:,card:,channel:,timeout:,version -o +b:f:C:c:t:V -- "$@")"
 (( $? != 0 )) && exit 128
 eval set -- "$GETOPT"
 
 backend="$(default_backend)" || die "no available backend"
 frontend=naughty
+card=
 channel="$(default_channel "$backend")"
 channel_set=false
 timeout=1
@@ -133,6 +154,10 @@ do
             ;;
         -f|--frontend)
             frontend="$2"
+            shift
+            ;;
+        -C|--card)
+            card="$2"
             shift
             ;;
         -c|--channel)
@@ -163,7 +188,7 @@ done
 case "$1" in
     get)
         (( $# > 1 )) && die "too many arguments for action '$1'"
-        volume_get "$backend" "$frontend" "$channel"
+        volume_get
         ;;
 
     set)
@@ -172,7 +197,7 @@ case "$1" in
         # Set the volume
         case "$backend" in
             alsa|amixer)
-                amixer set "$channel" "$2"
+                amixer -q -M -- set "$channel" "$2"
                 ;;
             pa|pulseaudio|pactl)
                 case "$2" in
@@ -189,7 +214,7 @@ case "$1" in
             ;;
         esac
         # Display it
-        volume_get "$backend" "$frontend" "$channel"
+        volume_get
         ;;
 
     mute|unmute|toggle)
@@ -197,7 +222,7 @@ case "$1" in
         # Mute/unmute/toggle the volume
         case "$backend" in
             alsa|amixer)
-                amixer set "$channel" "$1"
+                amixer -q -M -- set "$channel" "$1"
                 ;;
             pa|pulseaudio|pactl)
                 mode="$1"
@@ -207,7 +232,8 @@ case "$1" in
             ;;
         esac
         # Display it
-        volume_get "$backend" "$frontend" "$channel"
+        volume_get
         ;;
+    *) die "unknown action: $1" ;;
 esac
 
