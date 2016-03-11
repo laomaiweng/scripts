@@ -18,10 +18,12 @@
 # * v1.0    initial version                                                 #
 #############################################################################
 
-package provide lwutils 1.7.0
+package provide lwutils 1.7.1
 
 
-# Package dependencies
+## Package dependencies
+# Tcl 8.6.2 required for [string cat] in [::lwutils::stringPad]
+package require Tcl 8.6.2
 package require cmdline
 
 
@@ -234,10 +236,8 @@ proc ::lwutils::stringEscape {str} {
 #   padded string
 #############################################################################
 proc ::lwutils::stringPad {string length {char " "} {atleast 0}} {
-    # Pad the string with the given character
-    append string [string repeat $char $atleast] [string repeat $char [expr {$length-[string length $string]-$atleast}]]
-    # Return the padded string
-    return $string
+    # Return the string padded with the given character
+    return [string cat $string [string repeat $char $atleast] [string repeat $char [expr {$length-[string length $string]-$atleast}]]]
 }
 
 # Extend the string ensemble with [string pad]
