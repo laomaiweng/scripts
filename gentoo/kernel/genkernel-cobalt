@@ -22,9 +22,10 @@ if [[ "$1" == "-h" || "$1" == "--help" ]] ; then
     cat <<- _EOF_
 	  Usage: ${0##*/} [options]
 	
-	Generates a kernel and its initramfs with LVM, framebuffer and splash
-	support. Also strips the initramfs from unneeded stuff (modules and HW
-	detection logic).
+	Builds a kernel and its initramfs with LVM, framebuffer and splash
+	support, but without modules and HW detection logic.
+	Also optionally add \`v86d\` to the initramfs, update Grub, and emerge
+	@module-rebuild.
 	
 	The kernel is configured and built in \$KERNELDIR (default "/usr/src/linux"):
 	    $KERNELDIR
@@ -34,9 +35,14 @@ if [[ "$1" == "-h" || "$1" == "--help" ]] ; then
 	    $GRUBCFG
 	
 	Options:
-	    -m | --no-emerge    don't emerge @module-rebuild
-	    -u | --uvesafb      perform additional steps (add v86d
-	                        to initramfs) for uvesafb
+	    -n                      negate a following short option
+	    -g | --[no-]grub        update Grub
+                                (default: enabled)
+	    -m | --[no-]modules     emerge @module-rebuild
+                                (default: enabled)
+	    -u | --[no-]uvesafb     perform additional steps (add v86d
+	                            to initramfs) for uvesafb
+                                (default: disabled)
 	_EOF_
     exit
 fi
@@ -44,54 +50,82 @@ fi
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l no-emerge -o +m -- "$@")"
+getopt="$(getopt -n "${0##*/}" -l grub,no-grub,modules,no-modules,uvesafb,no-uvesafb -o +ngmu -- "$@")"
 (( $? != 0 )) && exit 1
 eval set -- "$getopt"
-emerge=true
+true=true       # trick for -n
+negate=false
+grub=true
+modules=true
 uvesafb=false
 while true ; do
+    # Negate if previous option was -n, and reset negation
+    $negate && true=false
+    negate=false
     case "$1" in
-        -m|--no-emerge) emerge=false ;;
-        -u|--uvesafb) uvesafb=true ;;
+        -n) negate=true ;;
+        -g) grub=$true ;;
+        --grub) grub=true ;;
+        --no-grub) grub=false ;;
+        -m) modules=$true ;;
+        --modules) modules=true ;;
+        --no-modules) modules=false ;;
+        -u) uvesafb=$true ;;
+        --uvesafb) uvesafb=true ;;
+        --no-uvesafb) uvesafb=false ;;
         --) shift ; break ;;
         *) die "getopt failure" ;;
     esac
+    # Reset trueness
+    true=true
     shift
 done
 (( $# > 0 )) && die "unhandled arguments: $@"
 
 
-# Build the kernel
-genkernel --save-config --no-mrproper --clean --install --symlink --no-ramdisk-modules --no-all-ramdisk-modules --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --mountboot --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --lvm --no-mdadm --no-dmraid --no-luks --kernname="cobalt" --no-firmware --compress-initramfs-type="best" all || exit 1
+# Build directory
+builddir="$KERNELDIR/build"
 
 
-if (( $? == 0 )) ; then
-    # Append v86d files to the initramfs for uvesafb
-    if $uvesafb ; then
-        echo
-        echo
-        initramfs="$(ls -ct -1 /boot/initramfs* | head -n 1)"    # use most recently touched initramfs
-                                                                 # (yes, `ls` is bad: use [[ -nt ]] instead?)
-        initdir="${0##*/}-initramfs"
-        importer="${0%/*}/import-initramfs"
-        if [[ -f "$initramfs" && -x "$importer" ]] ; then
-            echo "Including additional files into initramfs..."
-            mkdir -p "$initdir"
-            pushd "$initdir"
-            gunzip -c "$initramfs" | cpio -i
-            popd
-            "$importer" /usr/share/v86d/initramfs "$initdir"
-            pushd "$initdir"
-            find . -print0 | cpio -0 -o -H newc | gzip -c -9 > "$initramfs"
-            popd
-            rm -Rf "$initdir"
-        else
-            die "cannot include additional files: importer not found, or initramfs not found"
-        fi
-    fi
+
+(
+    # Ok, let's get paranoid about permissions now. The kernel build below will generate the kernel's signing key for modules, and we don't want these to be world-readable.
+    umask 0027
+
+    # Create the build directory as genkernel fails without it
+    mkdir -p "$builddir"
+
+    # Build the kernel:
+    # * save the config in /etc/kernels (--save-config)
+    # * assume the config is fine (--no-oldconfig)
+    # * clean up, but not too much (--no-mrproper --no-clean)
+    # * install on /boot and symlink it (--mountboot --install --symlink)
+    # * kernel directory and configuration from the environment (--kerneldir --kernel-config)
+    # * separate kernel build directory (--kernel-outputdir)
+    # * custom kernel name (--kernname)
+    # * build fast (--makeopts)
+    # * don't ask for the keymap on boot, it's already on the Grub command line (--no-keymap)
+    # * fancyness (--splash --splash-res)
+    # * don't include modules and firmware in the initramfs, it's a custom kernel with all required components built in (--no-ramdisk-modules --no-all-ramdisk-modules)
+    # * initramfs components (--lvm --no-mdadm --no-dmraid --no-luks)
+    # * include v86d if requested (--initramfs-overlay) -- UNUSED, UNTESTED
+    # * use the best compression available in the kernel configuration (--compress-initramfs-type="best")
+    genkernel --save-config --no-oldconfig --no-mrproper --clean --mountboot --install --symlink --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="cobalt" --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --no-ramdisk-modules --no-all-ramdisk-modules --no-firmware --lvm --no-mdadm --no-dmraid --no-luks ${uvesafb:+--initramfs-overlay=/usr/share/v86d/initramfs} --compress-initramfs-type="best" all
+    rc=$?
+
+    # Fine, now let's loosen the restrictions a bit so that portage can still build external modules
+    echo
+    echo "chgrp -R portage $KERNELDIR/"
+    chgrp -R portage "$KERNELDIR/"      # trailing / is important to chmod the actual directory
+                                        # and not the symlink (in the KERNELDIR=/usr/src/linux case)
+
+    # Exit the subshell with genkernel's return code
+    exit "$rc"
+) || exit 1
 
 
-    # Configure Grub
+# Configure Grub
+if $grub ; then
     echo
     echo
     if [[ -f "$GRUBCFG" ]]
@@ -102,14 +136,22 @@ if (( $? == 0 )) ; then
     fi
 fi
 
+
 # Emerge external modules
-if $emerge ; then
+if $modules ; then
     echo
     echo
-    emerge --quiet-build y -k @module-rebuild
+    # The linux-mod/linux-info eclasses need KERNEL_DIR/KBUILD_OUTPUT to use the right kernel
+    KERNEL_DIR="$KERNELDIR" KBUILD_OUTPUT="$builddir" emerge --quiet-build y --keep-going @module-rebuild
+
+    # Sign the modules
+    echo
+    echo
+    echo "Signing modules:"
+    kernelversion="$(sed -n -e 's/^# Linux[^ ]* \([^ ]\+\) Kernel Configuration$/\1/p' "$KERNELCONF")"
+    for module in $(equery f $(equery b "/lib/modules/$kernelversion") | grep '^/lib/modules/'"$kernelversion"'/.*\.ko$')
+    do
+        echo "$module"
+        "$builddir/scripts/sign-file" sha512 "$KERNELDIR/certs/signing_key.pem" "$KERNELDIR/certs/signing_key.x509" "$module"
+    done
 fi
-
-echo
-echo "Done."
-echo
-
