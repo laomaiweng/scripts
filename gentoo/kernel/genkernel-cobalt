@@ -148,10 +148,10 @@ if $modules ; then
     echo
     echo
     echo "Signing modules:"
-    kernelversion="$(sed -n -e 's/^# Linux[^ ]* \([^ ]\+\) Kernel Configuration$/\1/p' "$KERNELCONF")"
+    kernelversion="$(cat "$builddir/include/config/kernel.release")"
     for module in $(equery f $(equery b "/lib/modules/$kernelversion") | grep '^/lib/modules/'"$kernelversion"'/.*\.ko$')
     do
         echo "$module"
-        "$builddir/scripts/sign-file" sha512 "$KERNELDIR/certs/signing_key.pem" "$KERNELDIR/certs/signing_key.x509" "$module"
+        "$builddir/scripts/sign-file" sha512 "$builddir/certs/signing_key.pem" "$builddir/certs/signing_key.x509" "$module"
     done
 fi
