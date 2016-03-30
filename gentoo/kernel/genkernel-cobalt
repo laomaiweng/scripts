@@ -24,7 +24,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]] ; then
 	
 	Builds a kernel and its initramfs with LVM, framebuffer and splash
 	support, but without modules and HW detection logic.
-	Also optionally add \`v86d\` to the initramfs, update Grub, and emerge
+	Can also add \`v86d\` to the initramfs, update Grub, and emerge
 	@module-rebuild.
 	
 	The kernel is configured and built in \$KERNELDIR (default "/usr/src/linux"):
@@ -38,6 +38,8 @@ if [[ "$1" == "-h" || "$1" == "--help" ]] ; then
 	    -n                      negate a following short option
 	    -g | --[no-]grub        update Grub
                                 (default: enabled)
+	    -k | --[no-]kernel      build the kernel itself
+                                (default: enabled)
 	    -m | --[no-]modules     emerge @module-rebuild
                                 (default: enabled)
 	    -u | --[no-]uvesafb     perform additional steps (add v86d
@@ -50,12 +52,13 @@ fi
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l grub,no-grub,modules,no-modules,uvesafb,no-uvesafb -o +ngmu -- "$@")"
+getopt="$(getopt -n "${0##*/}" -l grub,no-grub,kernel,no-kernel,modules,no-modules,uvesafb,no-uvesafb -o +ngkmu -- "$@")"
 (( $? != 0 )) && exit 1
 eval set -- "$getopt"
 true=true       # trick for -n
 negate=false
 grub=true
+kernel=true
 modules=true
 uvesafb=false
 while true ; do
@@ -67,6 +70,9 @@ while true ; do
         -g) grub=$true ;;
         --grub) grub=true ;;
         --no-grub) grub=false ;;
+        -k) kernel=$true ;;
+        --kernel) kernel=true ;;
+        --no-kernel) kernel=false ;;
         -m) modules=$true ;;
         --modules) modules=true ;;
         --no-modules) modules=false ;;
@@ -88,40 +94,42 @@ builddir="$KERNELDIR/build"
 
 
 
-(
-    # Ok, let's get paranoid about permissions now. The kernel build below will generate the kernel's signing key for modules, and we don't want these to be world-readable.
-    umask 0027
+if $kernel ; then
+    (
+        # Ok, let's get paranoid about permissions now. The kernel build below will generate the kernel's signing key for modules, and we don't want these to be world-readable.
+        umask 0027
 
-    # Create the build directory as genkernel fails without it
-    mkdir -p "$builddir"
+        # Create the build directory as genkernel fails without it
+        mkdir -p "$builddir"
 
-    # Build the kernel:
-    # * save the config in /etc/kernels (--save-config)
-    # * assume the config is fine (--no-oldconfig)
-    # * clean up, but not too much (--no-mrproper --no-clean)
-    # * install on /boot and symlink it (--mountboot --install --symlink)
-    # * kernel directory and configuration from the environment (--kerneldir --kernel-config)
-    # * separate kernel build directory (--kernel-outputdir)
-    # * custom kernel name (--kernname)
-    # * build fast (--makeopts)
-    # * don't ask for the keymap on boot, it's already on the Grub command line (--no-keymap)
-    # * fancyness (--splash --splash-res)
-    # * don't include modules and firmware in the initramfs, it's a custom kernel with all required components built in (--no-ramdisk-modules --no-all-ramdisk-modules)
-    # * initramfs components (--lvm --no-mdadm --no-dmraid --no-luks)
-    # * include v86d if requested (--initramfs-overlay) -- UNUSED, UNTESTED
-    # * use the best compression available in the kernel configuration (--compress-initramfs-type="best")
-    genkernel --save-config --no-oldconfig --no-mrproper --clean --mountboot --install --symlink --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="cobalt" --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --no-ramdisk-modules --no-all-ramdisk-modules --no-firmware --lvm --no-mdadm --no-dmraid --no-luks ${uvesafb:+--initramfs-overlay=/usr/share/v86d/initramfs} --compress-initramfs-type="best" all
-    rc=$?
+        # Build the kernel:
+        # * save the config in /etc/kernels (--save-config)
+        # * assume the config is fine (--no-oldconfig)
+        # * clean up, but not too much (--no-mrproper --no-clean)
+        # * install on /boot and symlink it (--mountboot --install --symlink)
+        # * kernel directory and configuration from the environment (--kerneldir --kernel-config)
+        # * separate kernel build directory (--kernel-outputdir)
+        # * custom kernel name (--kernname)
+        # * build fast (--makeopts)
+        # * don't ask for the keymap on boot, it's already on the Grub command line (--no-keymap)
+        # * fancyness (--splash --splash-res)
+        # * don't include modules and firmware in the initramfs, it's a custom kernel with all required components built in (--no-ramdisk-modules --no-all-ramdisk-modules)
+        # * initramfs components (--lvm --no-mdadm --no-dmraid --no-luks)
+        # * include v86d if requested (--initramfs-overlay) -- UNUSED, UNTESTED
+        # * use the best compression available in the kernel configuration (--compress-initramfs-type="best")
+        genkernel --save-config --no-oldconfig --no-mrproper --clean --mountboot --install --symlink --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="cobalt" --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --no-ramdisk-modules --no-all-ramdisk-modules --no-firmware --lvm --no-mdadm --no-dmraid --no-luks ${uvesafb:+--initramfs-overlay=/usr/share/v86d/initramfs} --compress-initramfs-type="best" all
+        rc=$?
 
-    # Fine, now let's loosen the restrictions a bit so that portage can still build external modules
-    echo
-    echo "chgrp -R portage $KERNELDIR/"
-    chgrp -R portage "$KERNELDIR/"      # trailing / is important to chmod the actual directory
-                                        # and not the symlink (in the KERNELDIR=/usr/src/linux case)
+        # Fine, now let's loosen the restrictions a bit so that portage can still build external modules
+        echo
+        echo "chgrp -R portage $KERNELDIR/"
+        chgrp -R portage "$KERNELDIR/"      # trailing / is important to chmod the actual directory
+                                            # and not the symlink (in the KERNELDIR=/usr/src/linux case)
 
-    # Exit the subshell with genkernel's return code
-    exit "$rc"
-) || exit 1
+        # Exit the subshell with genkernel's return code
+        exit "$rc"
+    ) || exit 1
+fi
 
 
 # Configure Grub
