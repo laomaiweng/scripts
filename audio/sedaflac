@@ -1,18 +1,64 @@
 #!/bin/bash
+# sedaflac - edit tags on a FLAC file with sed
 
-if [[ $# -lt 2 || "$1" == "-h" || "$1" == "--help" ]]
+# Build full name
+[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
+
+# Source required modules (bashmod first, then use it for the others)
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/modules/bashmod}" ]] && { printf "Error: This script requires the 'bashmod' module, please specify its path\n       with the BASH_MODULES_SCRIPT environment variable.\n" ; exit 255 ; }
+source "$BASH_MODULES_SCRIPT"
+bashmod die
+
+if (( $# < 2 )) || [[ "$1" =~ ^(-h|--help)$ ]]
 then
-    echo "Usage: ${0##*/} <sed script> <file ...>"
+    cat <<- EOF
+	Usage: ${0##*/} [options] <sed script> <file ...>
+	
+	Runs the tags of a FLAC file through sed and imports them back into the file.
+	
+	Options:
+	  -n | --dry-run    don't actually change the tags (most useful in combination with -v)
+	  -v | --verbose    display the new tags (use \`sedaflac -v '' file\` to print current tags)
+	EOF
     exit
 fi
 
+# Parse command line
+getopt -T &> /dev/null
+(( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
+getopt="$(getopt -n "${0##*/}" -l dry-run,verbose -o nv -- "$@")"
+(( $? != 0 )) && exit 128
+eval set -- "$getopt"
+
+# Process options
+dryrun=false
+verbose=false
+while true
+do
+    case "$1" in
+        -n|--dry-run) dryrun=true ;;
+        -v|--verbose) verbose=true ;;
+        --) shift ; break ;;
+        *) die -r128 "internal error!" ;;
+    esac
+    shift
+done
+
+# Process arguments
+(( $# < 2 )) && die -r128 "missing script and/or file"
 sedscript="$1"
 shift
 
-# Sed and apply the tags in two steps to avoid unsetting all tags in case of a sed script error
+# Process files
 for f in "$@"
 do
-    tags="$(metaflac --export-tags-to=- "$f" | sed -e "$sedscript")" || continue
-    metaflac --remove-all-tags --import-tags-from=- "$f" <<< "$tags"
+    # Get the current tags
+    oldtags="$(metaflac --export-tags-to=- "$f")" || continue       # metaflac should be printing something to stderr on failure
+    # Apply the sed script
+    newtags="$(sed -e "$sedscript" <<< "$oldtags")" || continue     # sed should be printing something to stderr on failure
+    # Be verbose
+    $verbose && printf "$f:\n$(sed -e 's/^/  /' <<< "$newtags")\n\n"
+    # Apply the new tags
+    $dryrun || { [[ "$oldtags" != "$newtags" ]] && metaflac --remove-all-tags --import-tags-from=- "$f" <<< "$newtags" ; }
+    # IMPORTANT: apply the tags only as a last step to avoid unsetting all tags in case of an error when getting/sed-ing the tags
 done
-
