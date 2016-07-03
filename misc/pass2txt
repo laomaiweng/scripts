@@ -1,6 +1,14 @@
 #!/bin/bash
 # Convert a pass-managed password store into a single encrypted text file
 
+# Build full name
+[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
+
+# Source required modules (bashmod first, then use it for the others)
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/modules/bashmod}" ]] && { printf "Error: This script requires the 'bashmod' module, please specify its path\n       with the BASH_MODULES_SCRIPT environment variable.\n" ; exit 255 ; }
+source "$BASH_MODULES_SCRIPT"
+bashmod die
+
 # Define constants
 gpg=gpg2
 pass_dir="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
@@ -14,15 +22,16 @@ then
 	  Usage: ${0##*/} [options]
 	
 	Options:
-	  -o | --output         output file (default is stdout)
-	  -r | --recipient      add a GPG recipient (may be used multiple times)
+	  -o <file> | --output=<file>   output file (default is stdout)
+	  -r <id>   | --recipient=<id>  add a GPG recipient (may be used multiple times)
+	  -s[id]    | --sign=[id]       sign the output
 	
 	Convert a pass-managed password store into a single encrypted text file.
 	
 	Password store location:     \$PASSWORD_STORE_DIR
 	                             (default: \$HOME/.password-store)
-	GPG options for input file:  ${gpg_input_options[@]}
-	GPG options for output file: ${gpg_output_options[@]}
+	GPG options for input files: ${gpg_input_options[@]}
+	GPG options for output text: ${gpg_output_options[@]}
 	_EOF_
     exit
 fi
@@ -30,7 +39,7 @@ fi
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l recipient:,output: -o +r:o: -- "$@")"
+getopt="$(getopt -n "${0##*/}" -l output:,recipient:,sign:: -o +o:r:s:: -- "$@")"
 (( $? != 0 )) && exit 1
 eval set -- "$getopt"
 
@@ -38,8 +47,9 @@ output=
 while true
 do
     case "$1" in
-        -r|--recipient) gpg_output_options+=(-r "$2") ; shift ;;
         -o|--output) output="$2" ; shift ;;
+        -r|--recipient) gpg_output_options+=(--recipient "$2") ; shift ;;
+        -s|--sign) gpg_output_options+=(--sign) ; [[ -n "$2" ]] && gpg_output_options+=(--local-user "$2") ; shift ;;
         --) shift ; break ;;
         *) die "internal error!" ;;
     esac
