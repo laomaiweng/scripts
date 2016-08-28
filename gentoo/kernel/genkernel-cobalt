@@ -5,8 +5,7 @@
 [[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
 
 # Source required modules (bashmod first, then use it for the others)
-[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/functions/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
-       with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/functions/bashmod}" ]] && { printf "Error: This script requires the 'bashmod' module, please specify its path\n       with the BASH_MODULES_SCRIPT environment variable.\n" ; exit 255 ; }
 source "$BASH_MODULES_SCRIPT"
 bashmod die
 
@@ -18,8 +17,9 @@ bashmod die
 
 
 # Display help
-if [[ "$1" == "-h" || "$1" == "--help" ]] ; then
-    cat <<- _EOF_
+if [[ "$1" =~ ^(-h|--help)$ ]]
+then
+    cat <<- EOF
 	  Usage: ${0##*/} [options]
 	
 	Builds a kernel and its initramfs with LVM, framebuffer and splash
@@ -37,15 +37,15 @@ if [[ "$1" == "-h" || "$1" == "--help" ]] ; then
 	Options:
 	    -n                      negate a following short option
 	    -g | --[no-]grub        update Grub
-                                (default: enabled)
+	                            (default: enabled)
 	    -k | --[no-]kernel      build the kernel itself
-                                (default: enabled)
+	                            (default: enabled)
 	    -m | --[no-]modules     emerge @module-rebuild
-                                (default: enabled)
+	                            (default: enabled)
 	    -u | --[no-]uvesafb     perform additional steps (add v86d
 	                            to initramfs) for uvesafb
-                                (default: disabled)
-	_EOF_
+	                            (default: disabled)
+	EOF
     exit
 fi
 
@@ -60,8 +60,9 @@ negate=false
 grub=true
 kernel=true
 modules=true
-uvesafb=false
-while true ; do
+uvesafb=        # empty value: used with ${uvesafb:+whatever}
+while true
+do
     # Negate if previous option was -n, and reset negation
     $negate && true=false
     negate=false
@@ -77,8 +78,8 @@ while true ; do
         --modules) modules=true ;;
         --no-modules) modules=false ;;
         -u) uvesafb=$true ;;
-        --uvesafb) uvesafb=true ;;
-        --no-uvesafb) uvesafb=false ;;
+        --uvesafb) uvesafb=yes ;;
+        --no-uvesafb) uvesafb= ;;   # empty value: used with ${uvesafb:+whatever}
         --) shift ; break ;;
         *) die "getopt failure" ;;
     esac
@@ -94,7 +95,9 @@ builddir="$KERNELDIR/build"
 
 
 
-if $kernel ; then
+## Build the kernel
+if $kernel
+then
     (
         # Ok, let's get paranoid about permissions now. The kernel build below will generate the kernel's signing key for modules, and we don't want these to be world-readable.
         umask 0027
@@ -128,40 +131,47 @@ if $kernel ; then
 
         # Exit the subshell with genkernel's return code
         exit "$rc"
-    ) || exit 1
+    ) || die "kernel build failed"
 fi
 
 
-# Configure Grub
-if $grub ; then
+## Configure Grub
+if $grub
+then
     echo
     echo
     if [[ -f "$GRUBCFG" ]]
     then
-        grub2-mkconfig -o "$GRUBCFG"
+        grub2-mkconfig -o "$GRUBCFG" || die "GRUB configuration failed"
     else
         echo "Warning: cannot update Grub: '$GRUBCFG' not found" >&2
     fi
 fi
 
 
-# Emerge external modules
-if $modules ; then
+## Build external modules
+if $modules
+then
+    # Emerge external modules
     echo
     echo
-    # The linux-mod/linux-info eclasses need KERNEL_DIR/KBUILD_OUTPUT to use the right kernel
-    KERNEL_DIR="$KERNELDIR" KBUILD_OUTPUT="$builddir" emerge --quiet-build y --keep-going @module-rebuild
+    # Find out whether we're building a PaX kernel and adjust USE flags accordingly
+    grep -q '^CONFIG_PAX=y$' "$KERNELCONF" && export USE=pax_kernel || export USE=-pax_kernel
+    # The linux-mod/linux-info eclasses need KERNEL_DIR/KBUILD_OUTPUT to use the right kernel and build directory
+    KERNEL_DIR="$KERNELDIR" KBUILD_OUTPUT="$builddir" emerge --quiet-build y --keep-going @module-rebuild || die "emerge modules failed"
 
     # Sign the modules
     echo
     echo
     echo "Signing modules:"
-    kernelversion="$(cat "$builddir/include/config/kernel.release")"
+    kernelversion="$(< "$builddir/include/config/kernel.release")"
     sigtext="~Module signature appended~"
     for module in $(equery f $(equery b "/lib/modules/$kernelversion") | grep '^/lib/modules/'"$kernelversion"'/.*\.ko$')
     do
         echo -n "$module "
-        if [[ "$(dd if="$module" iflag=skip_bytes skip="$(($(stat -c %s "$module") - ${#sigtext} - 1))" status=none)" == "$sigtext" ]] ; then
+        # Look for "~Module signature appended~" at the end of the file
+        if [[ "$(dd if="$module" iflag=skip_bytes skip="$(($(stat -c %s "$module") - ${#sigtext} - 1))" status=none)" == "$sigtext" ]]
+        then
             echo "ALREADY SIGNED"
         else
             "$builddir/scripts/sign-file" sha512 "$builddir/certs/signing_key.pem" "$builddir/certs/signing_key.x509" "$module" && echo OK || echo FAIL
