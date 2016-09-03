@@ -21,7 +21,17 @@ package provide lwdebug 1.2
 # Define the lwdebug namespace
 namespace eval lwdebug {
     variable debug 1
-    variable assertrc 127
+
+    # Namespace for [tee]
+    namespace eval tee {
+        variable chans {}
+    }
+
+    # Namespace for [assert]
+    namespace eval assert {
+        variable rc 127
+        variable cleanupscript {}
+    }
 }
 
 
@@ -170,19 +180,19 @@ proc ::lwdebug::interact {args} {
 # Globals: NONE
 #
 # Variables:
-#   teechans    channels to tee to
+#   tee::chans  channels to tee to
 #
 # Return: NONE
 #############################################################################
 proc ::lwdebug::tee {args} {
-    variable teechans
+    variable tee::chans
 
     # Disable any existing tee
-    if {[info command ::lwdebug::teeputs] ne ""} {
+    if {[info command ::lwdebug::tee::puts] ne ""} {
         rename ::puts {}
-        rename ::lwdebug::teeputs ::puts
+        rename ::lwdebug::tee::puts ::puts
     }
-    set teechans {}
+    set tee::chans {}
 
     # Setup a new tee
     if {$args ne "-"} {
@@ -192,16 +202,16 @@ proc ::lwdebug::tee {args} {
                 return -code error "invalid chan: $chan"
             }
         }
-        set teechans $args
+        set tee::chans $args
 
         # Move puts out of the way
-        rename ::puts ::lwdebug::teeputs
+        rename ::puts ::lwdebug::tee::puts
         # Declare a tee-ing puts wrapper
         proc ::puts {args} {
             set text [lindex $args end]
-            ::lwdebug::teeputs {*}$args
-            foreach chan $::lwdebug::teechans {
-                ::lwdebug::teeputs $chan $text
+            ::lwdebug::tee::puts {*}$args
+            foreach chan $::lwdebug::tee::chans {
+                ::lwdebug::tee::puts $chan $text
             }
         }
     }
@@ -209,24 +219,36 @@ proc ::lwdebug::tee {args} {
 
 #############################################################################
 # Check a condition and terminate the program if it does not hold true.
-# The return code is $::lwdebug::assertrc (default: 127).
+# On failure, calls the cleanup script (if any, in the context of the caller,
+# from variable $::lwdebug::assert::cleanupscript), prints an assert(3)-like
+# message and aborts with exit code $::lwdebug::assert::rc (default: 127).
 #
 # Arguments:
 #   cond        [expr] boolean condition to check
+#   args        additional arguments/commands to the cleanup script
 #
 # Globals: NONE
 #
 # Variables:
-#   assertrc    exit code if the condition is not met
+#   assert::rc              exit code on failure
+#   assert::cleanupscript   script to run on failure (for last-minute cleanup)
 #
 # Return: NONE
 #############################################################################
-proc ::lwdebug::assert {cond} {
-    variable assertrc
+proc ::lwdebug::assert {cond args} {
+    variable assert::rc
+    variable assert::cleanupscript
 
-    # Check condition
+    # Check the condition
     if {!([uplevel 1 [list expr $cond]])} {
-        # Condition failed: build error message
+        # Condition failed: call the cleanup script with additional arguments
+        try {
+            uplevel 1 [concat $assert::cleanupscript $args]
+        } on error {result options} {
+            ::puts stderr "assert: Cleanup script failure: $result"
+        }
+
+        # Build and print the error message (as if printed by the caller)
         set frame [info frame -1]
         set framedesc [list "assert"]
         # This surely needs some polishing in case we're not in a straightforward proc invocation
@@ -240,7 +262,7 @@ proc ::lwdebug::assert {cond} {
         ::puts stderr "Aborted"
 
         # Bail out
-        exit $assertrc
+        exit $assert::rc
     }
 }
 
