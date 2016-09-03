@@ -7,6 +7,7 @@
 # Procedures get nopped if environment variable TCL_DEBUG is unset.         #
 #                                                                           #
 # History:                                                                  #
+#           add [assert]                                                    #
 # * v1.2    add [run]                                                       #
 #           add [tee]                                                       #
 #           rename package to 'lwdebug'                                     #
@@ -20,6 +21,7 @@ package provide lwdebug 1.2
 # Define the lwdebug namespace
 namespace eval lwdebug {
     variable debug 1
+    variable assertrc 127
 }
 
 
@@ -51,7 +53,7 @@ proc ::lwdebug::run {body} {
 }
 
 #############################################################################
-# Puts wrapper.
+# Puts wrapper that only prints when debugging is enabled.
 #
 # Arguments:
 #   args    arguments to puts
@@ -202,6 +204,43 @@ proc ::lwdebug::tee {args} {
                 ::lwdebug::teeputs $chan $text
             }
         }
+    }
+}
+
+#############################################################################
+# Check a condition and terminate the program if it does not hold true.
+# The return code is $::lwdebug::assertrc (default: 127).
+#
+# Arguments:
+#   cond        [expr] boolean condition to check
+#
+# Globals: NONE
+#
+# Variables:
+#   assertrc    exit code if the condition is not met
+#
+# Return: NONE
+#############################################################################
+proc ::lwdebug::assert {cond} {
+    variable assertrc
+
+    # Check condition
+    if {!([uplevel 1 [list expr $cond]])} {
+        # Condition failed: build error message
+        set frame [info frame -1]
+        set framedesc [list "assert"]
+        # This surely needs some polishing in case we're not in a straightforward proc invocation
+        if {[dict exists $frame file] && [dict exists $frame line]} {
+            lappend framedesc "[file tail [dict get $frame file]]:[dict get $frame line]"
+        }
+        if {[dict exists $frame proc]} {
+            lappend framedesc "[dict get $frame proc]"
+        }
+        ::puts stderr "[join $framedesc ": "]: Assertion `$cond' failed."
+        ::puts stderr "Aborted"
+
+        # Bail out
+        exit $assertrc
     }
 }
 
