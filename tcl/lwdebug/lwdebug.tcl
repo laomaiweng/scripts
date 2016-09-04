@@ -7,6 +7,7 @@
 # Procedures get nopped if environment variable TCL_DEBUG is unset.         #
 #                                                                           #
 # History:                                                                  #
+# * v1.3    add preserve- and scrub-lists                                   #
 #           add [assert]                                                    #
 # * v1.2    add [run]                                                       #
 #           add [tee]                                                       #
@@ -20,7 +21,14 @@ package provide lwdebug 1.2
 
 # Define the lwdebug namespace
 namespace eval lwdebug {
+    # Debug flag
     variable debug 1
+
+    # Lists of procs to preserve (even with debugging disabled) / scrub (even with debugging enabled)
+    # Set those variables before doing [package require lwdebug]
+    # Names must be unqualified (no ::lwdebug:: prefix)
+    variable preservelist
+    variable scrublist
 
     # Namespace for [tee]
     namespace eval tee {
@@ -275,13 +283,21 @@ proc ::lwdebug::assert {cond args} {
 #############################################################################
 #############################################################################
 
-# Disable debugging if the TCL_DEBUG environment variable is not set
 if {![info exists ::env(TCL_DEBUG)]} {
-    # Nop all debug procs
+    # Debuging disabled: nop all debug procs except for those in the preserve list
     foreach proc [info procs ::lwdebug::*] {
-        proc $proc args {}
+        if {[namespace tail $proc] ni $::lwdebug::preservelist} {
+            proc $proc args {}
+        }
     }
-    # Set the debug flag to false
+    # Unset the debug flag
     set ::lwdebug::debug 0
+} else {
+    # Debugging enabled: nop debug procs that are in the scrub list
+    foreach proc $::lwdebug::scrublist {
+        if {[info procs ::lwdebug::$proc] ne ""} {
+            proc ::lwdebug::$proc args {}
+        }
+    }
 }
 
