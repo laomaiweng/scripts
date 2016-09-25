@@ -16,6 +16,15 @@ bashmod die
 : "${GRUBCFG:=/boot/grub/grub.cfg}"
 
 
+# Functions
+function verbosedo() {
+    err="$1"
+    shift
+    echo "  $*"
+    "$@" || die "$err"
+}
+
+
 # Display help
 if [[ "$1" =~ ^(-h|--help)$ ]]
 then
@@ -98,40 +107,42 @@ builddir="$KERNELDIR/build"
 ## Build the kernel
 if $kernel
 then
-    (
-        # Ok, let's get paranoid about permissions now. The kernel build below will generate the kernel's signing key for modules, and we don't want these to be world-readable.
-        umask 0027
+    # Ok, let's get paranoid about permissions now. The kernel build below will generate the kernel's signing key for modules, and we don't want these to be world-readable -- or even portage-readable.
+    umask="$(umask)"
+    echo
+    echo "kernel lockdown:"
+    verbosedo "kernel lockdown failed" umask 0027
+    verbosedo "kernel lockdown failed" chmod 700 "$KERNELDIR/"      # trailing / is important to chgrp the actual directory and not the symlink (in the KERNELDIR=/usr/src/linux case)
+    echo
 
-        # Create the build directory as genkernel fails without it
-        mkdir -p "$builddir"
+    # Create the build directory as genkernel fails without it
+    mkdir -p "$builddir" || die "build directory creation failed"
 
-        # Build the kernel:
-        # * save the config in /etc/kernels (--save-config)
-        # * assume the config is fine (--no-oldconfig)
-        # * clean up, but not too much (--no-mrproper --no-clean)
-        # * install on /boot and symlink it (--mountboot --install --symlink)
-        # * kernel directory and configuration from the environment (--kerneldir --kernel-config)
-        # * separate kernel build directory (--kernel-outputdir)
-        # * custom kernel name (--kernname)
-        # * build fast (--makeopts)
-        # * don't ask for the keymap on boot, it's already on the Grub command line (--no-keymap)
-        # * fancyness (--splash --splash-res)
-        # * don't include modules and firmware in the initramfs, it's a custom kernel with all required components built in (--no-ramdisk-modules --no-all-ramdisk-modules)
-        # * initramfs components (--lvm --no-mdadm --no-dmraid --no-luks)
-        # * include v86d if requested (--initramfs-overlay) -- UNUSED, UNTESTED
-        # * use the best compression available in the kernel configuration (--compress-initramfs-type="best")
-        genkernel --save-config --no-oldconfig --no-mrproper --clean --mountboot --install --symlink --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="cobalt" --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --no-ramdisk-modules --no-all-ramdisk-modules --no-firmware --lvm --no-mdadm --no-dmraid --no-luks ${uvesafb:+--initramfs-overlay=/usr/share/v86d/initramfs} --compress-initramfs-type="best" all
-        rc=$?
+    # Build the kernel:
+    # * save the config in /etc/kernels (--save-config)
+    # * assume the config is fine (--no-oldconfig)
+    # * clean up, but not too much (--no-mrproper --no-clean)
+    # * install on /boot and symlink it (--mountboot --install --symlink)
+    # * kernel directory and configuration from the environment (--kerneldir --kernel-config)
+    # * separate kernel build directory (--kernel-outputdir)
+    # * custom kernel name (--kernname)
+    # * build fast (--makeopts)
+    # * don't ask for the keymap on boot, it's already on the Grub command line (--no-keymap)
+    # * fancyness (--splash --splash-res)
+    # * don't include modules and firmware in the initramfs, it's a custom kernel with all required components built in (--no-ramdisk-modules --no-all-ramdisk-modules)
+    # * initramfs components (--lvm --no-mdadm --no-dmraid --no-luks)
+    # * include v86d if requested (--initramfs-overlay) -- UNUSED, UNTESTED
+    # * use the best compression available in the kernel configuration (--compress-initramfs-type="best")
+    genkernel --save-config --no-oldconfig --no-mrproper --clean --mountboot --install --symlink --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="cobalt" --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --no-ramdisk-modules --no-all-ramdisk-modules --no-firmware --lvm --no-mdadm --no-dmraid --no-luks ${uvesafb:+--initramfs-overlay=/usr/share/v86d/initramfs} --compress-initramfs-type="best" all || die "kernel build failed"
 
-        # Fine, now let's loosen the restrictions a bit so that portage can still build external modules
-        echo
-        echo "chgrp -R portage $KERNELDIR/"
-        chgrp -R portage "$KERNELDIR/"      # trailing / is important to chmod the actual directory
-                                            # and not the symlink (in the KERNELDIR=/usr/src/linux case)
-
-        # Exit the subshell with genkernel's return code
-        exit "$rc"
-    ) || die "kernel build failed"
+    # Fine, now let's loosen the restrictions a bit so that portage can still build external modules -- but keep the keys locked
+    echo
+    echo "kernel partial unlock:"
+    verbosedo "kernel unlock failed" chgrp -R portage "$KERNELDIR/"                 # trailing / is important to chgrp the actual directory and not the symlink (in the KERNELDIR=/usr/src/linux case)
+    verbosedo "kernel unlock failed" chgrp root "$builddir"/certs/signing_key.*
+    verbosedo "kernel unlock failed" chmod 600 "$builddir"/certs/signing_key.*
+    verbosedo "kernel unlock failed" chmod 750 "$KERNELDIR/"                        # trailing / is important to chgrp the actual directory and not the symlink (in the KERNELDIR=/usr/src/linux case)
+    verbosedo "kernel unlock failed" umask "$umask"
 fi
 
 
