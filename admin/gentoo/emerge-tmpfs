@@ -1,20 +1,60 @@
 #!/bin/bash
 
-if [[ $# != 1 || "$1" == "-h" || "$1" == "--help" ]]
+if (( $# != 1 )) || [[ "$1" =~ ^(-h|--help)$ ]]
 then
     echo "  Usage: ${0##*/} <size>
 
-Mount the Portage build directory as an in-RAM tmpfs. The size can be given in
+Mount the Portage build directory as a tmpfs. The size can be given in
 human-readable format or as a percentage of total RAM.
-Keep in mind that having a large tmpfs will decrease the amount of RAM
+Keep in mind that filling your tmpfs will decrease the amount of RAM
 available for the actual build!" >&2
     exit
 fi
 
-# PORTAGE_TMPDIR unset: source Portage config or default to /usr/portage/distfiles
-[[ -z "$PORTAGE_TMPDIR" ]] && . /etc/portage/make.conf
-[[ -z "$PORTAGE_TMPDIR" ]] && PORTAGE_TMPDIR=/var/tmp/portage
+function die() {
+    echo "Error: $*"
+    exit 1
+} >&2
 
-# Mount the tmpfs
-mount -t tmpfs -o size="$1",mode=775,uid=root,gid=portage tmpfs "$PORTAGE_TMPDIR"
+size="$1"
 
+# Tentative mount to let `mount' parse the tmpfs size
+tmpmount="$(mktemp -d)" || die "dummy mktemp failed"
+mount -t tmpfs -o size="$size" tmpfs "$tmpmount" || die "dummy mount failed"
+newsize="$(findmnt -rnbu -o SIZE "$tmpmount")" || die "dummy size findmnt failed"
+hnewsize="$(findmnt -rnu -o SIZE "$tmpmount")" || die "dummy human size findmnt failed"
+umount "$tmpmount" || die "dummy umount failed"
+rmdir "$tmpmount" || die "dummy rmdir failed"
+
+# PORTAGE_TMPDIR unset: source Portage config or default to /var/tmp/portage
+[[ -z "$PORTAGE_TMPDIR" ]] && { . /etc/portage/make.conf || die "can't source /etc/portage/make.conf" ; }
+: "${PORTAGE_TMPDIR:=/var/tmp/portage}"
+
+# Mount options
+opts=(size="$size" mode=775 uid=root gid=portage)
+
+# Mount check
+re=
+if findmnt "$PORTAGE_TMPDIR" >&/dev/null
+then
+    # Compare sizes
+    cursize="$(findmnt -rnbu -o SIZE "$PORTAGE_TMPDIR")" || die "size findmnt failed"
+    hcursize="$(findmnt -rnu -o SIZE "$PORTAGE_TMPDIR")" || die "human size findmnt failed"
+    if (( cursize < newsize ))
+    then
+        read -r -p "$PORTAGE_TMPDIR already mounted as a smaller tmpfs ($hcursize < $hnewsize), remount? [Y/n] " ans
+        [[ "${ans,,}" =~ (n|no) ]] && exit
+    else
+        echo "$PORTAGE_TMPDIR already mounted as a larger tmpfs ($hnewsize ≤ $hcursize), not remounting."
+        exit
+    fi
+    # Add remount option
+    opts+=(remount)
+    re=re
+fi
+
+# Actual mount
+IFS=,
+mount -t tmpfs -o "${opts[*]}" tmpfs "$PORTAGE_TMPDIR" || die "mount failed"
+unset IFS
+echo "$PORTAGE_TMPDIR ${re}mounted with size $(findmnt -rnu -o SIZE "$PORTAGE_TMPDIR")."
