@@ -1,0 +1,79 @@
+#!/bin/bash
+
+# Tmpfs-related variables
+[[ -z "$PORTAGE_TMPDIR" ]] && PORTAGE_TMPDIR="$(
+    # PORTAGE_TMPDIR unset: source Portage config in a subshell so as not to pollute the environment with Portage variables
+    . /etc/portage/make.conf
+    echo "$PORTAGE_TMPDIR"
+)"
+: "${PORTAGE_TMPDIR:=/var/tmp/portage}"
+: "${PORTAGE_TMPDIR_SIZE:=9G}"
+
+# Kernel-related variables
+export KERNEL_DIR="/usr/src/linux-$(uname -r)"
+export KBUILD_OUTPUT="$KERNEL_DIR/build"
+zgrep -q '^CONFIG_PAX=y$' /proc/config.gz && export USE=pax_kernel || export USE=-pax_kernel
+
+# Print help
+if [[ "$1" =~ ^(-h|--help)$ ]]
+then
+    cat <<-EOF
+	  Usage: ${0##*/} <mode>
+	
+	Emerge wrapper that sets up a bunch of things (kernel-related variables,
+	tmpfs) before calling emerge in one of several well-defined modes of
+	operations.
+	
+	Emerge modes:
+	  * package:    emerge -avA "\$@"
+	  * world:      emerge -auvDNA --with-bdeps=y "\$@" world
+	  * depclean:   emerge -aA "\$@" --depclean
+	  * preserved:  emerge -av1A "\$@" @preserved-rebuild
+	  * resume:     emerge --resume "\$@"
+	
+	Kernel-related variables:
+	  KERNEL_DIR="$KERNEL_DIR"
+	  KBUILD_OUTPUT="$KBUILD_OUTPUT"
+	  USE="$USE"
+	
+	Tmpfs-related variables:
+	  PORTAGE_TMPDIR="$PORTAGE_TMPDIR"
+	  PORTAGE_TMPDIR_SIZE="$PORTAGE_TMPDIR_SIZE"
+	
+	EOF
+    exit
+fi
+
+# Mount PORTAGE_TMPDIR as tmpfs
+"${0%/*}"/emerge-tmpfs "${PORTAGE_TMPDIR_SIZE:-9G}"
+echo
+
+# Emerge!
+case "$1" in
+    r|resume)
+        shift
+        emerge --resume "$@"
+        ;;
+    P|preserved)
+        shift
+        emerge -av1A "$@" @preserved-rebuild
+        ;;
+    d|depclean)
+        shift
+        emerge -aA "$@" --depclean --exclude sys-kernel/gentoo-sources --exclude sys-kernel/hardened-sources
+        ;;
+    w|world|"")
+        [[ -n "$1" ]] && shift || echo "Warning: no emerge type given, assuming 'world'" >&2
+        emerge -auvDNA --with-bdeps=y "$@" world
+        ;;
+    p|package|*)
+        [[ "$1" =~ ^(package|p)$ ]] && shift || echo "Warning: emerge type '$1' not recognized, defaulting to 'package'" >&2
+        emerge -avA "$@"
+        ;;
+esac
+
+# Unmount PORTAGE_TMPDIR if empty
+echo
+shopt -s nullglob
+files=("$PORTAGE_TMPDIR"/*)
+(( ${#files[@]} > 0 )) && echo "Files remain in $PORTAGE_TMPDIR, not unmounting." || umount "$PORTAGE_TMPDIR"
