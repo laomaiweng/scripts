@@ -181,7 +181,8 @@ then
     do
         echo -n "$module "
         # Look for "~Module signature appended~" at the end of the file
-        if [[ "$(dd if="$module" iflag=skip_bytes skip="$(($(stat -c %s "$module") - ${#sigtext} - 1))" status=none)" == "$sigtext" ]]
+        # (use `base64` to prevent Bash from choking on null bytes)
+        if [[ "$(dd if="$module" iflag=skip_bytes skip="$(($(stat -c %s "$module") - ${#sigtext} - 1))" status=none | base64)" == "$(base64 <<<"$sigtext")" ]]
         then
             echo "ALREADY SIGNED"
         else
