@@ -52,22 +52,27 @@ echo
 case "$1" in
     r|resume)
         shift
+        echo "> emerge --resume $*"
         emerge --resume "$@"
         ;;
     P|preserved)
         shift
+        echo "> emerge -av1A $* @preserved-rebuild"
         emerge -av1A "$@" @preserved-rebuild
         ;;
     d|depclean)
         shift
+        echo "> emerge -aA $* --depclean --exclude sys-kernel/gentoo-sources --exclude sys-kernel/hardened-sources"
         emerge -aA "$@" --depclean --exclude sys-kernel/gentoo-sources --exclude sys-kernel/hardened-sources
         ;;
     w|world|"")
         [[ -n "$1" ]] && shift || echo "Warning: no emerge type given, assuming 'world'" >&2
+        echo "> emerge -auvDNA --with-bdeps=y $* world"
         emerge -auvDNA --with-bdeps=y "$@" world
         ;;
     p|package|*)
         [[ "$1" =~ ^(package|p)$ ]] && shift || echo "Warning: emerge type '$1' not recognized, defaulting to 'package'" >&2
+        echo "> emerge -avA $*"
         emerge -avA "$@"
         ;;
 esac
