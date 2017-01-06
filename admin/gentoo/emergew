@@ -25,11 +25,11 @@ then
 	operations.
 	
 	Emerge modes:
-	  * package:    emerge -avA "\$@"
-	  * world:      emerge -auvDNA --with-bdeps=y "\$@" world
-	  * depclean:   emerge -aA "\$@" --depclean
-	  * preserved:  emerge -av1A "\$@" @preserved-rebuild
-	  * resume:     emerge --resume "\$@"
+	  * package   (p): emerge -avA "\$@"
+	  * world     (w): emerge -auvDNA --with-bdeps=y "\$@" world
+	  * depclean  (d): emerge -aA "\$@" --depclean
+	  * preserved (P): emerge -av1A "\$@" @preserved-rebuild
+	  * resume    (r): emerge --resume "\$@"
 	
 	Kernel-related variables:
 	  KERNEL_DIR="$KERNEL_DIR"
