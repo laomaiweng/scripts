@@ -1,0 +1,97 @@
+#!/bin/bash
+
+
+# Build full name
+[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
+
+# Source required modules (bashmod first, then use it for the others)
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/functions/bashmod}" ]] && { printf "Error: This script requires the 'bashmod' module, please specify its path\n       with the BASH_MODULES_SCRIPT environment variable.\n" ; exit 255 ; }
+source "$BASH_MODULES_SCRIPT"
+bashmod die
+
+
+# Display help
+if [[ "$1" =~ ^(-h|--help)$ ]]
+then
+    cat <<- EOF
+	  Usage: ${0##*/} [options] <kernel>
+	
+	Unpack a LZ4-compressed, EFI-stubbed kernel with an embedded initramfs.
+	
+	Options:
+	  -d | --dir <dir>      directory in which to unpack the kernel
+	                        (default: \${TMPDIR:-/tmp}/kernel-XXXXXXXX)
+	EOF
+    exit
+fi
+
+# Process options
+getopt -T &> /dev/null
+(( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
+getopt="$(getopt -n "${0##*/}" -l dir: -o +d: -- "$@")" || exit 1
+eval set -- "$getopt"
+dir=
+while true
+do
+    case "$1" in
+        -d|--dir) dir=$2 ;;
+        --) shift ; break ;;
+        *) die "getopt failure" ;;
+    esac
+    shift
+done
+(( $# < 1 )) && die "missing kernel argument"
+(( $# > 1 )) && die "too many arguments: ${*@Q}"
+kernel="$1"
+if [[ -n "$dir" ]]
+then
+    rmdir "$dir" &>/dev/null
+    [[ -d "$dir" ]] && die "$dir exists and is not empty"
+    mkdir -m0750 "$dir" || die "can't create target directory: $dir"
+else
+    dir="$(mktemp --tmpdir -d kernel-XXXXXXXX)"
+    echo "Unpacking directory: $dir"
+fi
+
+# Define functions
+cleanup() {
+    [[ -s "$kimage" ]] || rm -f "$kimage"
+    rmdir "$dir" &>/dev/null
+}
+
+# Check arguments
+[[ "$(file -Lb "$kernel")" == "Linux kernel"* ]] || die "$kernel not reported as a Linux kernel by \`file\`"
+kimage="$dir/kernel"
+kimagetrunc="$dir/kernel.trunc"
+initramfs="$dir/initramfs"
+config="$dir/config"
+trap -- cleanup EXIT
+
+## Extract kernel
+offsets=( $(grep -abom1 $'\x02\x21\x4c\x18' "$kernel" | cut -d: -f1) ) || die "can't find LZ4 blob offset in $kernel"
+(( ${#offsets[@]} > 1 )) && die "found multiple LZ4 blobs in $kernel"
+(( ${#offsets[@]} == 0 )) && die "found no LZ4 blob in $kernel"
+offset="${offsets[0]}"
+dd if="$kernel" skip="$offset" iflag=skip_bytes status=none | lz4 -dlc >"$kimage" || die "can't extract LZ4 blob at offset $offset in $kernel"
+echo "Extracted LZ4 blob at offset $offset in $kernel into $kimage."
+
+## Extract initramfs
+# Assume there's at most one, not several
+offset="$(binwalk -ycpio "$kimage" | sed -ne '4 s/^\([0-9]\+\).*$/\1/p')" || die "can't find CPIO archive in $kimage"
+{ [[ -z "$offset" ]] || (( offset < 0 )); } && die "found no CPIO archive in $kimage"
+mkdir -m0750 "$initramfs" || die "can't create initramfs directory $initramfs"
+dd if="$kimage" skip="$offset" iflag=skip_bytes status=none | cpio -iHnewc --no-absolute-filenames -D "$initramfs" &>/dev/null || die "can't extract CPIO archive at offset $offset in $kimage"
+echo "Extracted CPIO archive at offset $offset in $kimage into $initramfs."
+
+## Truncate initramfs from kernel
+dd if="$kimage" count="$offset" iflag=count_bytes of="$kimagetrunc" status=none || die "can't truncate CPIO archive at offset $offset from $kimage"
+echo "Copied $kimage into $kimagetrunc with CPIO archive at offset $offset truncated."
+
+## Extract config.gz
+offsets=( $(binwalk -ygz "$kimage" | sed -ne 's/^\([0-9]\+\).*$/\1/p') ) || die "can't find GZIP archive in $kimage"
+(( ${#offsets[@]} > 1 )) && die "found multiple GZIP blobs in $kimage"
+(( ${#offsets[@]} == 0 )) && die "found no GZIP blob in $kimage"
+offset="${offsets[0]}"
+dd if="$kimage" skip="$offset" iflag=skip_bytes status=none | gzip -dcq >"$config"      # non-0 exit code expected, input has trailing junk
+(( $? == 0 || $? == 2 )) || die "can't extract GZIP archive at offset $offset in $kimage"
+echo "Extracted GZIP blob at offset $offset in $kimage into $config."
