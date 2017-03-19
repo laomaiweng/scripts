@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# Build full name
+[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
+
+# Source required modules (bashmod first, then use it for the others)
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/functions/bashmod}" ]] && { printf "Error: This script requires the 'bashmod' module, please specify its path\n       with the BASH_MODULES_SCRIPT environment variable.\n" ; exit 255 ; }
+source "$BASH_MODULES_SCRIPT"
+bashmod die
+
+
 # Tmpfs-related variables
 [[ -z "$PORTAGE_TMPDIR" ]] && PORTAGE_TMPDIR="$(
     # PORTAGE_TMPDIR unset: source Portage config in a subshell so as not to pollute the environment with Portage variables
@@ -10,9 +19,12 @@
 : "${PORTAGE_TMPDIR_SIZE:=9G}"
 
 # Kernel-related variables
-export KERNEL_DIR="/usr/src/linux-$(uname -r)"
-export KBUILD_OUTPUT="$KERNEL_DIR/build"
-zgrep -q '^CONFIG_PAX=y$' /proc/config.gz && export USE=pax_kernel || export USE=-pax_kernel
+export KERNEL_DIR
+: "${KERNEL_DIR:=/usr/src/linux-$(uname -r)}" || die '`uname -r` failed, please export KERNEL_DIR explicitly'
+export KBUILD_OUTPUT
+: "${KBUILD_OUTPUT:=$KERNEL_DIR/build}"
+export USE=-pax_kernel
+zgrep -q '^CONFIG_PAX=y$' /proc/config.gz && USE=pax_kernel
 
 # Print help
 if [[ "$1" =~ ^(-h|--help)$ ]]
@@ -44,8 +56,27 @@ then
     exit
 fi
 
-# Mount PORTAGE_TMPDIR as tmpfs
+
+# Cleanup function
+cleanup() {
+    # Stop sitting in the tmpfs
+    cd / || echo "can't cd to /" >&2
+    # Unmount PORTAGE_TMPDIR if empty
+    shopt -s nullglob
+    files=("$PORTAGE_TMPDIR"/*)
+    if (( ${#files[@]} > 0 ))
+    then
+        echo "Files remain in $PORTAGE_TMPDIR, not unmounting."
+    else
+        umount -l "$PORTAGE_TMPDIR"
+    fi
+}
+
+
+# Mount PORTAGE_TMPDIR as tmpfs and sit in there to prevent others from unmounting it beneath us
 "${0%/*}"/emerge-tmpfs "${PORTAGE_TMPDIR_SIZE:-9G}"
+trap -- cleanup EXIT
+cd "$PORTAGE_TMPDIR" || die "can't cd to $PORTAGE_TMPDIR"
 echo
 
 # Emerge!
@@ -77,8 +108,6 @@ case "$1" in
         ;;
 esac
 
-# Unmount PORTAGE_TMPDIR if empty
 echo
-shopt -s nullglob
-files=("$PORTAGE_TMPDIR"/*)
-(( ${#files[@]} > 0 )) && echo "Files remain in $PORTAGE_TMPDIR, not unmounting." || umount "$PORTAGE_TMPDIR"
+
+# The cleanup() trap will fire now
