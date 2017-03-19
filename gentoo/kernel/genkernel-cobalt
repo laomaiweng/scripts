@@ -14,15 +14,31 @@ bashmod die
 : "${KERNELDIR:=/usr/src/linux}"
 : "${KERNELCONF:=$KERNELDIR/.config.cobalt}"
 : "${GRUBCFG:=/boot/grub/grub.cfg}"
+: "${EFIPART:=/boot/efi}"
+: "${EFIKERNEL:=/EFI/Boot/gentoo.efi}"
+: "${EFILABEL:=Gentoo Linux}"
+
+# Global variables
+efipart_mounted=false
 
 
 # Functions
-function verbosedo() {
+function require() {    # 1:command 2:reqby
+    command -v "$1" &>/dev/null || die "$1 is required for $2 but not available"
+}
+function verbosedo() {  # 1:error_message *:command
     err="$1"
     shift
     echo "  $*"
     "$@" || die "$err"
 }
+function cleanup() {
+    $efipart_mounted && { umount "$EFIPART" || echo "Error: failed to unmount EFI partition at $EFIPART"; }
+}
+
+
+# Traps
+trap -- cleanup EXIT
 
 
 # Display help
@@ -31,10 +47,11 @@ then
     cat <<- EOF
 	  Usage: ${0##*/} [options]
 	
-	Builds a kernel and its initramfs with LVM, framebuffer and splash
-	support, but without modules and HW detection logic.
-	Can also add \`v86d\` to the initramfs, update Grub, and emerge
-	@module-rebuild.
+	Builds a kernel and its integrated initramfs with LUKS, LVM, and the
+	fr-bépo keymap, but without modules and HW detection logic.
+	Can also include boot splash with Plymouth, update Grub, sign (for Secure
+	Boot) and install the kernel to an EFI partition, and \`emerge
+	@module-rebuild\` (and sign the modules).
 	
 	The kernel is configured and built in \$KERNELDIR (default "/usr/src/linux"):
 	    $KERNELDIR
@@ -42,34 +59,44 @@ then
 	    $KERNELCONF
 	The Grub configuration file is \$GRUBCFG (default "/boot/grub/grub.cfg"):
 	    $GRUBCFG
+	The EFI partition is mounted at \$EFIPART (default "/boot/efi"):
+	    $EFIPART
+	The EFI kernel path is \$EFIKERNEL (default "/EFI/Boot/gentoo.efi"):
+	    $EFIKERNEL
+	The EFI boot label is \$EFILABEL (default "Gentoo Linux"):
+	    $EFILABEL
 	
 	Options:
 	    -n                      negate a following short option
+	    -e | --[no-]efi         update the EFI partition
+	                            (default: disabled)
 	    -g | --[no-]grub        update Grub
-	                            (default: enabled)
+	                            (default: disabled)
 	    -k | --[no-]kernel      build the kernel itself
 	                            (default: enabled)
 	    -m | --[no-]modules     emerge @module-rebuild
 	                            (default: enabled)
-	    -u | --[no-]uvesafb     perform additional steps (add v86d
-	                            to initramfs) for uvesafb
-	                            (default: disabled)
+	    -s | --[no-]splash      include boot splash using Plymouth
+	                            (default: enabled)
 	EOF
     exit
 fi
 
+# Check early requirements
+require getopt
+
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l grub,no-grub,kernel,no-kernel,modules,no-modules,uvesafb,no-uvesafb -o +ngkmu -- "$@")"
-(( $? != 0 )) && exit 1
+getopt="$(getopt -n "${0##*/}" -l efi,no-efi,grub,no-grub,kernel,no-kernel,modules,no-modules,splash,no-splash -o +negkms -- "$@")" || exit 1
 eval set -- "$getopt"
 true=true       # trick for -n
 negate=false
-grub=true
+efi=false
+grub=false
 kernel=true
 modules=true
-uvesafb=        # empty value: used with ${uvesafb:+whatever}
+splash=true
 while true
 do
     # Negate if previous option was -n, and reset negation
@@ -77,6 +104,9 @@ do
     negate=false
     case "$1" in
         -n) negate=true ;;
+        -e) efi=$true ;;
+        --efi) efi=true ;;
+        --no-efi) efi=false ;;
         -g) grub=$true ;;
         --grub) grub=true ;;
         --no-grub) grub=false ;;
@@ -86,9 +116,9 @@ do
         -m) modules=$true ;;
         --modules) modules=true ;;
         --no-modules) modules=false ;;
-        -u) uvesafb=$true ;;
-        --uvesafb) uvesafb=yes ;;
-        --no-uvesafb) uvesafb= ;;   # empty value: used with ${uvesafb:+whatever}
+        -s) splash=$true ;;
+        --splash) splash=true ;;
+        --no-splash) splash=false ;;
         --) shift ; break ;;
         *) die "getopt failure" ;;
     esac
@@ -96,7 +126,43 @@ do
     true=true
     shift
 done
-(( $# > 0 )) && die "unhandled arguments: $@"
+$splash || splash=      # if false, ${splash:+blah} must expand to null
+(( $# > 0 )) && die "unhandled arguments: ${*@Q}"
+
+
+# Check requirements
+if $kernel
+then
+    require chmod --kernel
+    require mkdir --kernel
+    require genkernel --kernel
+    require chgrp --kernel
+fi
+if $grub
+then
+    require grub2-mkconfig --grub
+fi
+if $efi
+then
+    require mountpoint --efi
+    require mount --efi
+    require umount --efi
+    require sed --efi
+    require blkid --efi
+    require efibootmgr --efi
+    require tail --efi
+    require mv --efi
+    require cp --efi
+    [[ "${EFIKERNEL:0:1}" == "/" ]] || die "\$EFIKERNEL must be an absolute path on the EFI partition: $EFIKERNEL"
+fi
+if $modules
+then
+    require grep --modules
+    require emerge --modules
+    require equery --modules
+    require dd --modules
+    require base64 --modules
+fi
 
 
 # Build directory
@@ -112,41 +178,41 @@ then
     echo
     echo "kernel lockdown:"
     verbosedo "kernel lockdown failed" umask 0027
-    verbosedo "kernel lockdown failed" chmod 700 "$KERNELDIR/"      # trailing / is important to chgrp the actual directory and not the symlink (in the KERNELDIR=/usr/src/linux case)
+    verbosedo "kernel lockdown failed" chmod 700 "${KERNELDIR%/}/"                  # trailing / is important to chgrp the actual directory and not the symlink (in the KERNELDIR=/usr/src/linux case)
     echo
 
     # Create the build directory as genkernel fails without it
     mkdir -p "$builddir" || die "build directory creation failed"
 
-    # Build the kernel:
+    # Build the kernel, with genkernel from sys-kernel/genkernel-next:
     # * save the config in /etc/kernels (--save-config)
     # * assume the config is fine (--no-oldconfig)
-    # * clean up, but not too much (--no-mrproper --no-clean)
-    # * install on /boot and symlink it (--mountboot --install --symlink)
+    # * clean up, but not too much (--no-mrproper --clean)
+    # * don't mount /boot, the real boot filesystem is on /boot/efi (--no-mountboot)
+    # * install on /boot and symlink it (--install --symlink)
     # * kernel directory and configuration from the environment (--kerneldir --kernel-config)
     # * separate kernel build directory (--kernel-outputdir)
     # * custom kernel name (--kernname)
     # * build fast (--makeopts)
-    # * don't ask for the keymap on boot, it's already on the Grub command line (--no-keymap)
-    # * fancyness (--splash --splash-res)
-    # * don't include modules and firmware in the initramfs, it's a custom kernel with all required components built in (--no-ramdisk-modules --no-all-ramdisk-modules)
-    # * initramfs components (--lvm --no-mdadm --no-dmraid --no-luks)
-    # * include v86d if requested (--initramfs-overlay) -- UNUSED, UNTESTED
-    # * use the best compression available in the kernel configuration (--compress-initramfs-type="best")
-    genkernel --save-config --no-oldconfig --no-mrproper --clean --mountboot --install --symlink --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="cobalt" --makeopts="-j8" --no-keymap --splash="emerge-world" --splash-res="1920x1080" --no-ramdisk-modules --no-all-ramdisk-modules --no-firmware --lvm --no-mdadm --no-dmraid --no-luks ${uvesafb:+--initramfs-overlay=/usr/share/v86d/initramfs} --compress-initramfs-type="best" all || die "kernel build failed"
+    # * set the keymap on boot from the kernel command line (--keymap)
+    # * fancyness (--plymouth --plymouth-theme)
+    # * don't include modules and firmware in the initramfs, it's a custom kernel with all required components built in (--no-ramdisk-modules --no-all-ramdisk-modules --no-firmware)
+    # * initramfs components (--busybox --udev --luks --lvm --no-mdadm --no-dmraid)
+    # * don't compress the initramfs, but embed it into the kernel (--no-compress-initramfs --integrated-initramfs)
+    genkernel --save-config --no-oldconfig --no-mrproper --clean --no-mountboot --install --symlink --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="cobalt" --makeopts="-j8 -l9" --keymap ${splash:+--plymouth --plymouth-theme=ENOENT} --no-ramdisk-modules --no-all-ramdisk-modules --no-firmware --busybox --udev --luks --lvm --no-mdadm --no-dmraid --no-compress-initramfs --integrated-initramfs all || die "kernel build failed"
 
     # Fine, now let's loosen the restrictions a bit so that portage can still build external modules -- but keep the keys locked
     echo
     echo "kernel partial unlock:"
-    verbosedo "kernel unlock failed" chgrp -R portage "$KERNELDIR/"                 # trailing / is important to chgrp the actual directory and not the symlink (in the KERNELDIR=/usr/src/linux case)
+    verbosedo "kernel unlock failed" chgrp -R portage "${KERNELDIR%/}/"             # trailing / is important to chgrp the actual directory and not the symlink (in the KERNELDIR=/usr/src/linux case)
     verbosedo "kernel unlock failed" chgrp root "$builddir"/certs/signing_key.*
     verbosedo "kernel unlock failed" chmod 600 "$builddir"/certs/signing_key.*
-    verbosedo "kernel unlock failed" chmod 750 "$KERNELDIR/"                        # trailing / is important to chgrp the actual directory and not the symlink (in the KERNELDIR=/usr/src/linux case)
+    verbosedo "kernel unlock failed" chmod 750 "${KERNELDIR%/}/"                    # trailing / is important to chgrp the actual directory and not the symlink (in the KERNELDIR=/usr/src/linux case)
     verbosedo "kernel unlock failed" umask "$umask"
 fi
 
 
-## Configure Grub
+## Update Grub
 if $grub
 then
     echo
@@ -160,6 +226,87 @@ then
 fi
 
 
+## Install to EFI
+if $efi
+then
+    echo
+
+    # Get information on the EFI partition
+    if ! mountpoint -q "$EFIPART"
+    then
+        mount "$EFIPART" || die "failed to mount EFI partition at $EFIPART"
+        efipart_mounted=true
+        echo "Mounted EFI partition: $EFIPART"
+    fi
+    efinode="$(mountpoint -d "$EFIPART")" || die "failed to mount EFI partition at $EFIPART"
+    IFS=: read -r efimajor efiminor <<<"$efinode" || die "can't get EFI partition major/minor numbers"
+    [[ -d /sys/dev/block/"$efinode" ]] || die "EFI partition is not a block device"
+    efidisk=/dev/"$(sed -n -e 's/^DEVNAME=//p' /sys/dev/block/"$efimajor":0/uevent)"
+    efiuuid="$(blkid -s PARTUUID -o value "${efidisk}${efiminor}")"
+    efipath="${EFIPART}${EFIKERNEL}"
+
+    # Set up an EFI boot entry
+    echo
+    echo "Setting up EFI boot entry:"
+    regex='s/^Boot\([0-9a-fA-F]\{4\}\)\(\*\?\)[[:space:]]\+\(.*\)[[:space:]]\+HD(\([^)]\+\))\/File(\([^)]\+\)).*/\1 a:\2 \4 \5 \3/p'    # regex rundown: "Boot" + 4-digit hex number + "*" if active + label + "HD(" + hd info + ")/File(" + path + ")"
+    badlabel=()
+    inactive=()
+    valid=()
+    while read -r bootnum active hd file label
+    do
+        # Check UUID and path
+        IFS=, read -r dummy dummy uuid dummy dummy <<<"$hd"
+        [[ "$uuid" == "$efiuuid" ]] || continue
+        [[ "$file" == "${EFIKERNEL//\//\\}" ]] || continue
+        echo "  * ${bootnum}${active#a:}: \"$label\" HD($hd)/File($file)"
+        # Check label
+        [[ "$label" == "$EFILABEL" ]] || { badlabel+=("$bootnum"); continue; }
+        # Check active
+        [[ "$active" == "a:*" ]] && valid+=("$bootnum") || inactive+=("$bootnum")
+    done <<<"$(efibootmgr -v | sed -n -e "$regex")"
+    if (( ${#valid[*]} > 1 ))
+    then
+        # It must be okay
+        echo "Found multiple valid EFI boot entries: ${valid[*]}"
+    elif (( ${#valid[*]} == 1 ))
+    then
+        # Neat
+        echo "Found valid EFI boot entry: ${valid[*]}"
+    elif (( ${#inactive[*]} >= 1 ))
+    then
+        # It's not great, but still okay
+        echo "############################################"
+        echo "# All valid EFI boot entries are *inactive*: ${inactive[*]}"
+        echo "############################################"
+    elif (( ${#badlabel[*]} >= 1 ))
+    then
+        # Uh oh, is there already something else using this path?
+        die "matching EFI boot entries have *bad labels*: ${badlabel[*]}"
+    else
+        # Fine, let's do this
+        echo "Warning: no matching EFI boot entry, creating one" >&2
+        entries="$(efibootmgr -v --create --disk "$efidisk" --part "$efiminor" --loader "${EFIKERNEL//\//\\}" --label "$EFILABEL")" || die "create EFI boot entry failed"
+        read -r bootnum active hd file label <<<"$(tail -n1 <<<"$entries" | sed -n -e "$regex")"
+        echo "  * ${bootnum}${active#a:}: \"$label\" HD($hd)/File($file)"
+    fi
+
+    # Install the new kernel to the EFI partition
+    echo
+    echo "Installing kernel to EFI partition:"
+    [[ -f "$efipath" ]] && verbosedo "backup current EFI kernel failed" mv -fT "$efipath"{,.old}
+    verbosedo "install new EFI kernel failed" cp -fLT /boot/kernel "$efipath"
+
+    # Unmount the partition
+    if $efipart_mounted
+    then
+        efipart_mounted=false
+        umount "$EFIPART" || echo "Error: failed to unmount EFI partition at $EFIPART"
+        echo
+        echo "Unmounted EFI partition: $EFIPART"
+    fi
+fi
+
+
 ## Build external modules
 if $modules
 then
@@ -167,7 +314,8 @@ then
     echo
     echo
     # Find out whether we're building a PaX kernel and adjust USE flags accordingly
-    grep -q '^CONFIG_PAX=y$' "$KERNELCONF" && export USE=pax_kernel || export USE=-pax_kernel
+    export USE=-pax_kernel
+    grep -q '^CONFIG_PAX=y$' "$KERNELCONF" && USE=pax_kernel
     # The linux-mod/linux-info eclasses need KERNEL_DIR/KBUILD_OUTPUT to use the right kernel and build directory
     KERNEL_DIR="$KERNELDIR" KBUILD_OUTPUT="$builddir" emerge --quiet-build y --keep-going @module-rebuild || die "emerge modules failed"
 
@@ -177,8 +325,10 @@ then
     echo "Signing modules:"
     kernelversion="$(< "$builddir/include/config/kernel.release")"
     sigtext="~Module signature appended~"
+    count=0
     for module in $(equery f $(equery b "/lib/modules/$kernelversion") | grep '^/lib/modules/'"$kernelversion"'/.*\.ko$')
     do
+        (( count++ ))
         echo -n "$module "
         # Look for "~Module signature appended~" at the end of the file
         # (use `base64` to prevent Bash from choking on null bytes)
@@ -189,4 +339,7 @@ then
             "$builddir/scripts/sign-file" sha512 "$builddir/certs/signing_key.pem" "$builddir/certs/signing_key.x509" "$module" && echo OK || echo FAIL
         fi
     done
+    echo "$count modules signed."
 fi
+
+echo
