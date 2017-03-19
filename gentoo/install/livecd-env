@@ -1,15 +1,19 @@
 #!/bin/bash
 
-BASE=/mnt/gentoo
+: "${CHROOT_BASE:=/mnt/gentoo}"
 
-grep -q $BASE /proc/mounts || { echo "Error: /mnt/gentoo not mounted" ; return ; }
+mountpoint -q "$CHROOT_BASE" || { echo "Error: $CHROOT_BASE not mounted" ; return ; }
 
-mount -t proc none $BASE/proc
-mount --rbind /sys $BASE/sys
-mount --rbind /dev $BASE/dev
+mount -v -t proc none "$CHROOT_BASE/proc"
+mount -v --rbind /sys "$CHROOT_BASE/sys"
+mount -v --make-rslave "$CHROOT_BASE/sys"
+mount -v --rbind /dev "$CHROOT_BASE/dev"
+mount -v --make-rslave "$CHROOT_BASE/dev"
 
-alias chroot-gentoo="chroot $BASE /bin/bash"
-echo "Live CD environment setup for chrooting into $BASE.
+alias chroot-gentoo="chroot $CHROOT_BASE /bin/bash"
+cat <<EOF
+
+Live CD environment setup for chrooting into $CHROOT_BASE.
 Enter the chroot with:                  chroot-gentoo
-Once inside, setup the environment:     source chroot-env"
-
+Once inside, setup the environment:     source chroot-env
+EOF
