@@ -1,0 +1,79 @@
+#!/bin/bash
+
+# Build full name
+[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
+
+# Source required modules (bashmod first, then use it for the others)
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/modules/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
+       with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
+source "$BASH_MODULES_SCRIPT"
+bashmod die
+
+
+help() {
+    cat <<-EOF
+	  Usage: ${0##*/} [options] [length] [count]
+	
+	Arguments:
+	  length        number of words in a passphrase
+	  count         number of passphrases to generate
+	
+	Options:
+	  -w|--wordlist <file>      wordlist file to use
+	                            (default: ~/.dwgen_wordlist)
+	EOF
+}
+
+# Check for --help
+if [[ "$1" =~ ^(-h|--help)$ ]]
+then
+    help
+    exit
+fi
+
+# Process arguments
+getopt -T &> /dev/null
+(( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
+getopt="$(getopt -n "${0##*/}" -l wordlist:,help -o +wh -- "$@")" || exit 128
+eval set -- "$getopt"
+
+wordlist=~/.dwgen_wordlist
+length=6
+count=10
+while true
+do
+    case "$1" in
+        -w|--wordlist) wordlist="$2" ;;
+        -h|--help)
+            help
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *) die "internal error!" ;;
+    esac
+    shift
+done
+# Consume remaining arguments
+(( $# >= 1 )) && { length="$1"; shift; }
+(( $# >= 1 )) && { count="$1"; shift; }
+(( $# == 0 )) || die "too many arguments: ${*@Q}"
+# Check arguments
+(( length > 0 )) || die "bad length: $length"
+(( count > 0 )) || die "bad count: $count"
+[[ -f "$wordlist" ]] || die "no such file: $wordlist"
+
+for (( i = 0; i < count; i++ ))
+do
+    words=()
+    for (( j = 0; j < length; j++ ))
+    do
+        # TODO: parameterize: die size (6), die count (5), entropy source (/dev/urandom)
+        rand="$(tr -dC 1-6 </dev/urandom | head -c5)" || die "can't draw randomness from /dev/urandom"
+        word="$(sed -n -e 's/^'"$rand"'\t\(.*\)$/\1/p' <"$wordlist")" || die "can't find word in $wordlist: $rand"
+        words+=( "$word" )
+    done
+    printf -- '%s\n' "${words[*]}"
+done
