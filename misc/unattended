@@ -1,0 +1,43 @@
+#!/bin/bash
+
+polling_period=60s
+
+die() {
+    printf -- "Error: %s" "$*"
+    exit 1
+} >&2
+
+cleanup() {
+    rm -f "$script"
+}
+
+if (( $# != 2 )) || [[ "$1" =~ ^(-h|--help)$ ]]
+then
+    cat >&2 <<-EOF
+	  Usage: ${0##*/} <pid> <script>
+	
+	Run a script after a PID terminates.
+	EOF
+    exit 0
+fi
+
+pid="$1"
+script="$2"
+
+# Checks
+[[ "$script" != "-" && ! -x "$script" ]] && die "script is not executable"
+
+# Wait for the PID to terminate
+while [[ -d "/proc/$pid" ]]; do sleep "$polling_period"; done
+
+# Dump the script to a file if from stdin
+if [[ "$script" == "-" ]]
+then
+    script="$(mktemp --tmpdir unattended-XXXXXXXX)" || die "can't create temporary file for script"
+    trap -- cleanup EXIT
+    cat >"$script" || die "can't write script to temporary file"
+    chmod +x "$script" || die "can't make temporary file executable"
+fi
+
+# Execute the script
+"$script"
