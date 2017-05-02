@@ -34,7 +34,7 @@ fi
 # Process arguments
 getopt -T &> /dev/null
 (( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l wordlist:,help -o +wh -- "$@")" || exit 128
+getopt="$(getopt -n "${0##*/}" -l wordlist:,help -o +w:h -- "$@")" || exit 128
 eval set -- "$getopt"
 
 wordlist=~/.dwgen_wordlist
@@ -43,7 +43,7 @@ count=10
 while true
 do
     case "$1" in
-        -w|--wordlist) wordlist="$2" ;;
+        -w|--wordlist) wordlist="$2"; shift ;;
         -h|--help)
             help
             exit 0
