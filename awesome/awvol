@@ -95,7 +95,7 @@ function volume_get() {
     [[ "$mute" == "yes" || "$mute" == "off" ]] && message+="  MUTE"
     case "$frontend" in
         stdout)  echo "$message" ;;
-        naughty) awesome-client - <<< "require('naughty').notify({ text='$(sed -e "s/'/\\'/g" <<< "$message")', title='Volume', timeout=$timeout})" ;;
+        naughty) awesome-client <<< "require('naughty').notify({ text='$(sed -e "s/'/\\'/g" <<< "$message")', title='Volume', timeout=$timeout})" ;;
         *)       die "invalid frontend" ;;
     esac
 }
@@ -134,9 +134,8 @@ fi
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
-GETOPT="$(getopt -n "${0##*/}" -l backend:,frontend:,card:,channel:,timeout:,version -o +b:f:C:c:t:V -- "$@")"
-(( $? != 0 )) && exit 128
-eval set -- "$GETOPT"
+getopt="$(getopt -n "${0##*/}" -l backend:,frontend:,card:,channel:,timeout:,version -o +b:f:C:c:t:V -- "$@")" || exit 128
+eval set -- "$getopt"
 
 backend="$(default_backend)" || die "no available backend"
 frontend=naughty
