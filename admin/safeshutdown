@@ -4,114 +4,107 @@
 # a login manager warning you that shutting down would be rude to them
 
 
-# grub-reboot alternatives
-GRUBREBOOT_ALTERNATIVES="grub-reboot grub2-reboot"
-
 # Build full name
-[[ "${0:0:1}" == "/" ]] && FULL_0="$0" || FULL_0="$PWD/$0"
+[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
 
 # Source required modules (bashmod first, then use it for the others)
-[[ ! -r "${BASH_MODULES_SCRIPT=${FULL_0%/*}/../bash/modules/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
+[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/modules/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
        with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
 source "$BASH_MODULES_SCRIPT"
 bashmod die
 
 
-# Help message
-if [[ $# -eq 1 && ( "$1" == "--help" || "$1" == "-h" ) ]]
+help() {
+    cat <<-EOF
+	  Usage: ${0##*/} [options] [-- shutdown-options]
+	
+	'shutdown' wrapper that ensures you really want to shutdown.
+	With no options, '-h now' is assumed.
+	
+	Options:
+	  -e | --efi [ENTRY]        EFI entry to boot into on next bootup
+	                            (requires efibootmgr)
+	EOF
+}
+
+# Check for --help
+if [[ "$1" =~ ^(-h|--help)$ ]]
 then
-    echo "  Usage: ${0##*/} [options] [--] [shutdown options]
-
-'shutdown' wrapper that ensures you really want to shutdown.
-Options not handled by ${0##*/} are passed on to shutdown.
-With no options, '-h now' is assumed.
-
-Options:
-  -g | --grub [ENTRY]       grub entry to boot into on next bootup
-                            (obviously requires grub, and grub-reboot)
-" >&2
+    help
     exit
 fi
 
+# Process arguments
+getopt -T &> /dev/null
+(( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
+getopt="$(getopt -n "${0##*/}" -l efi:,help -o +e:h -- "$@")" || exit 128
+eval set -- "$getopt"
 
-# Parse the options
-GRUBENTRY=''
-OPTS_DONE=''
-until [[ "$OPTS_DONE" ]]
+# explicitly don't set efientry, we need to differentiate between unset and set to an empty value
+while true
 do
     case "$1" in
-        "-g"|"--grub")
-            GRUBENTRY="$2"
-            [[ -z "$GRUBENTRY" ]] && die -r1 "empty grub entry"
-            shift 2
+        -e|--efi) efientry="$2"; shift ;;
+        -h|--help)
+            help
+            exit 0
             ;;
-
-        "--")
-            # End of options
-            OPTS_DONE='true'
+        --)
             shift
+            break
             ;;
-
-        *)
-            # Assume end of options (the rest of them will be passed on to shutdown)
-            OPTS_DONE='true'
-            ;;
+        *) die "internal error!" ;;
     esac
+    shift
 done
 
-
 # Print logged on users
-echo -e "  \033[01;33mLogged on users:\033[00m"
-w
-
+echo -e "\033[01;33mLogged on users:\033[00m"
+w || die "failed to list users"
 
 # Shutdown if the user confirms
 echo
 echo -ne "\033[01;37mDo you really want to shutdown the computer? yes/no:\033[00m "
-declare -u ANS
-read ANS
-case "$ANS" in
-    YES)
-        # Bail out on error
-        set -e
-
-        # Set the entry to reboot on for Grub
-        if [[ -n "$GRUBENTRY" ]]
+read -r ans
+case "${ans,,}" in
+    yes)
+        # Set the entry to reboot on for EFI
+        if [[ -v efientry ]]
         then
-            # Find grub-reboot
+            # Check for efibootmgr
             PATH="$PATH:/sbin:/usr/sbin"
-            for gr in $GRUBREBOOT_ALTERNATIVES
-            do
-                which $gr &> /dev/null && { GRUBREBOOT=$gr ; break ; }
-            done
-            [[ -z "$GRUBREBOOT" ]] && die -r1 "grub-reboot not found"
+            command -v efibootmgr &>/dev/null || die "efibootmgr not found"
 
-            # Mount the boot partition if required
-            UNMOUNT_BOOT=false
-            if grep -Eq '\B/boot\>' /etc/fstab
+            # Set/reset the boot entry
+            if [[ -n "$efientry" ]]
             then
-                # /boot must be mounted, check if it is
-                if ! grep -Eq '\B/boot\>' /etc/mtab
-                then
-                    # /boot is not mounted, let's mount it
-                    sudo mount /boot
-                    UNMOUNT_BOOT=true
-                fi
+                # Gather boot entries
+                efientries="$(efibootmgr | sed -n -e 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? \(.*\)$/\1 \2/p')" || die "efibootmgr: failed to list boot entries"
+
+                # Validate the boot entry
+                efinum=
+                while read -r bootnum bootname
+                do
+                    [[ "$efientry" == "$bootnum" || "$efientry" == "$bootname" ]] && { efinum="$bootnum"; break; }
+                done <<<"$efientries"
+                [[ -z "$efinum" ]] && die "invalid EFI boot entry: $efientry"
+
+                # Set the BootNext entry
+                sudo efibootmgr --bootnext "$efinum" || die "efibootmgr: failed to set next boot entry: $efinum"
+            else
+                # Reset the BootNext entry
+                sudo efibootmgr --delete-bootnext || die "efibootmgr: failed to reset next boot entry"
             fi
-
-            # Set the grub entry for next bootup
-            sudo "$GRUBREBOOT" "$GRUBENTRY"
-
-            # Unmount /boot it it was unmouted
-            [[ "$UNMOUNT_BOOT" == "true" ]] && sudo umount /boot
         fi
 
         # Shutdown
-        [[ $# -eq 0 ]] && OPTS="-h now"
-        sudo shutdown ${OPTS:-"$@"}
+        opts=(-h now)
+        (( $# )) && opts=("$@")
+        sudo shutdown "${opts[@]}"
         ;;
 
-    NO)
+    no)
+        # Easy peasy
         ;;
 
     *)
@@ -119,4 +112,3 @@ case "$ANS" in
         exit 1
         ;;
 esac
-
