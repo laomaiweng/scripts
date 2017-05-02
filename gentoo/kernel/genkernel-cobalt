@@ -17,22 +17,78 @@ bashmod die
 : "${EFIPART:=/boot/efi}"
 : "${EFIKERNEL:=/EFI/Boot/gentoo.efi}"
 : "${EFILABEL:=Gentoo Linux}"
+: "${PLYMOUTHDCONF:=/etc/plymouth/plymouthd.conf}"
+EMERGEOPTS=( $EMERGEOPTS )
 
 # Global variables
 efipart_mounted=false
+splash_default_theme="$(sed -n -e 's/^Theme=\(.*\)$/\1/p' "$PLYMOUTHDCONF")"
+: "${splash_default_theme:=spinner}"
 
 
 # Functions
-function require() {    # 1:command 2:reqby
+help() {
+    cat <<-EOF
+	  Usage: ${0##*/} [options]
+	
+	Builds a kernel and its integrated initramfs with LUKS, LVM, and the
+	fr-bépo keymap, but without modules and HW detection logic.
+	Can also include boot splash with Plymouth, update Grub, sign (for Secure
+	Boot) and install the kernel to an EFI partition, and \`emerge
+	@module-rebuild\` (and sign the modules).
+	
+	The kernel is configured and built in \$KERNELDIR (default "/usr/src/linux"):
+	    ${KERNELDIR:-(empty)}
+	using configuration \$KERNELCONF (default "\$KERNELDIR/.config.cobalt"):
+	    ${KERNELCONF:-(empty)}
+	EOF
+    if [[ "$1" == "full" ]]
+    then
+        cat <<-EOF
+		The EFI partition is mounted at \$EFIPART (default "/boot/efi"):
+		    ${EFIPART:-(empty)}
+		The EFI kernel path is \$EFIKERNEL (default "/EFI/Boot/gentoo.efi"):
+		    ${EFIKERNEL:-(empty)}
+		The EFI boot label is \$EFILABEL (default "Gentoo Linux"):
+		    ${EFILABEL:-(empty)}
+		The Grub configuration file is \$GRUBCFG (default "/boot/grub/grub.cfg"):
+		    ${GRUBCFG:-(empty)}
+		The Plymouth configuration file is \$PLYMOUTHDCONF (default "/etc/plymouth/plymouthd.conf"):
+		    ${PLYMOUTHDCONF:-(empty)}
+		The Plymouth default theme is (from \$PLYMOUTHDCONF, default: "spinner"):
+		    $splash_default_theme
+		Emerge is called with additional options from \$EMERGEOPTS (default empty):
+		    ${EMERGEOPTS:-(empty)}
+		EOF
+    fi
+	cat <<-EOF
+	
+	Options:
+	    -n                          negate a following short option
+	    -e | --[no-]efi             update the EFI partition
+	                                (default: enabled)
+	    -g | --[no-]grub            update Grub
+	                                (default: disabled)
+	    -k | --[no-]kernel          build the kernel itself
+	                                (default: enabled)
+	    -m | --[no-]modules         emerge @module-rebuild
+	                                (default: enabled)
+	    -s | --[no-]splash <theme>  include boot splash using Plymouth
+	                                (default: disabled, theme: from configuration)
+	    -h | --help [full]          display help
+	EOF
+    exit
+}
+require() {     # 1:command 2:reqby
     command -v "$1" &>/dev/null || die "$1 is required for $2 but not available"
 }
-function verbosedo() {  # 1:error_message *:command
+verbosedo() {   # 1:error_message *:command
     err="$1"
     shift
     echo "  $*"
     "$@" || die "$err"
 }
-function cleanup() {
+cleanup() {
     $efipart_mounted && { umount "$EFIPART" || echo "Error: failed to unmount EFI partition at $EFIPART"; }
 }
 
@@ -44,42 +100,8 @@ trap -- cleanup EXIT
 # Display help
 if [[ "$1" =~ ^(-h|--help)$ ]]
 then
-    cat <<- EOF
-	  Usage: ${0##*/} [options]
-	
-	Builds a kernel and its integrated initramfs with LUKS, LVM, and the
-	fr-bépo keymap, but without modules and HW detection logic.
-	Can also include boot splash with Plymouth, update Grub, sign (for Secure
-	Boot) and install the kernel to an EFI partition, and \`emerge
-	@module-rebuild\` (and sign the modules).
-	
-	The kernel is configured and built in \$KERNELDIR (default "/usr/src/linux"):
-	    $KERNELDIR
-	using configuration \$KERNELCONF (default "\$KERNELDIR/.config.cobalt"):
-	    $KERNELCONF
-	The Grub configuration file is \$GRUBCFG (default "/boot/grub/grub.cfg"):
-	    $GRUBCFG
-	The EFI partition is mounted at \$EFIPART (default "/boot/efi"):
-	    $EFIPART
-	The EFI kernel path is \$EFIKERNEL (default "/EFI/Boot/gentoo.efi"):
-	    $EFIKERNEL
-	The EFI boot label is \$EFILABEL (default "Gentoo Linux"):
-	    $EFILABEL
-	
-	Options:
-	    -n                      negate a following short option
-	    -e | --[no-]efi         update the EFI partition
-	                            (default: disabled)
-	    -g | --[no-]grub        update Grub
-	                            (default: disabled)
-	    -k | --[no-]kernel      build the kernel itself
-	                            (default: enabled)
-	    -m | --[no-]modules     emerge @module-rebuild
-	                            (default: enabled)
-	    -s | --[no-]splash      include boot splash using Plymouth
-	                            (default: enabled)
-	EOF
-    exit
+    shift
+    help "$@"
 fi
 
 # Check early requirements
@@ -88,21 +110,23 @@ require getopt
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l efi,no-efi,grub,no-grub,kernel,no-kernel,modules,no-modules,splash,no-splash -o +negkms -- "$@")" || exit 1
+getopt="$(getopt -n "${0##*/}" -l help,efi,no-efi,grub,no-grub,kernel,no-kernel,modules,no-modules,splash:,no-splash -o +hnegkms -- "$@")" || exit 1
 eval set -- "$getopt"
 true=true       # trick for -n
 negate=false
-efi=false
+efi=true
 grub=false
 kernel=true
 modules=true
-splash=true
+splash=false
+splash_theme="$splash_default_theme"
 while true
 do
     # Negate if previous option was -n, and reset negation
     $negate && true=false
     negate=false
     case "$1" in
+        -h|--help) help ;;
         -n) negate=true ;;
         -e) efi=$true ;;
         --efi) efi=true ;;
@@ -117,7 +141,7 @@ do
         --modules) modules=true ;;
         --no-modules) modules=false ;;
         -s) splash=$true ;;
-        --splash) splash=true ;;
+        --splash) splash=true; [[ -n "$2" ]] && splash_theme="$2"; shift ;;
         --no-splash) splash=false ;;
         --) shift ; break ;;
         *) die "getopt failure" ;;
@@ -127,6 +151,12 @@ do
     shift
 done
 $splash || splash=      # if false, ${splash:+blah} must expand to null
+splash_valid=false
+for t in $(plymouth-set-default-theme --list)   # bad
+do
+    [[ "$splash_theme" == "$t" ]] && { splash_valid=true; break; }
+done
+$splash_valid || die "invalid splash theme: $splash_theme"
 (( $# > 0 )) && die "unhandled arguments: ${*@Q}"
 
 
@@ -199,7 +229,7 @@ then
     # * don't include modules and firmware in the initramfs, it's a custom kernel with all required components built in (--no-ramdisk-modules --no-all-ramdisk-modules --no-firmware)
     # * initramfs components (--busybox --udev --luks --lvm --no-mdadm --no-dmraid)
     # * don't compress the initramfs, but embed it into the kernel (--no-compress-initramfs --integrated-initramfs)
-    genkernel --save-config --no-oldconfig --no-mrproper --clean --no-mountboot --install --symlink --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="cobalt" --makeopts="-j8 -l9" --keymap ${splash:+--plymouth --plymouth-theme=ENOENT} --no-ramdisk-modules --no-all-ramdisk-modules --no-firmware --busybox --udev --luks --lvm --no-mdadm --no-dmraid --no-compress-initramfs --integrated-initramfs all || die "kernel build failed"
+    genkernel --save-config --no-oldconfig --no-mrproper --clean --no-mountboot --install --symlink --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="cobalt" --makeopts="-j8 -l9" --keymap ${splash:+--plymouth --plymouth-theme="$splash_theme"} --no-ramdisk-modules --no-all-ramdisk-modules --no-firmware --busybox --udev --luks --lvm --no-mdadm --no-dmraid --no-compress-initramfs --integrated-initramfs all || die "kernel build failed"
 
     # Fine, now let's loosen the restrictions a bit so that portage can still build external modules -- but keep the keys locked
     echo
@@ -317,7 +347,7 @@ then
     export USE=-pax_kernel
     grep -q '^CONFIG_PAX=y$' "$KERNELCONF" && USE=pax_kernel
     # The linux-mod/linux-info eclasses need KERNEL_DIR/KBUILD_OUTPUT to use the right kernel and build directory
-    KERNEL_DIR="$KERNELDIR" KBUILD_OUTPUT="$builddir" emerge --quiet-build y --keep-going @module-rebuild || die "emerge modules failed"
+    KERNEL_DIR="$KERNELDIR" KBUILD_OUTPUT="$builddir" emerge --quiet-build y --keep-going "${EMERGEOPTS[@]}" @module-rebuild || die "emerge modules failed"
 
     # Sign the modules
     echo
