@@ -5,6 +5,8 @@
 # Volume setter and notifier for awesome, with naughty-fications.           #
 #                                                                           #
 # Version history:                                                          #
+#   v0.4    Update for Awesome 4                                            #
+#           Add autodetection of default sound card for ALSA                #
 #   v0.3    Improve error handling of bad input/environment                 #
 #           Add -C option to select sound card                              #
 #           Tweak the amixer backend                                        #
@@ -22,19 +24,19 @@ bashmod die
 
 
 # Constants definitions
-version=0.3
+version=0.4
 
 
 # Function definitions
-function regexp_escape() { # 1:string
+regexp_escape() { # 1:string
     sed -e 's/\./\\./g' -e 's,/,\/,g' <<< "$1"
 }
 
-function amixer() { # @:options
+amixer() { # @:options
     command amixer ${card:+-c "$card"} "$@"
 }
 
-function default_backend() {
+default_backend() {
     for b in pulseaudio alsa
     do
         if check_backend "$b"
@@ -46,7 +48,7 @@ function default_backend() {
     return 1
 }
 
-function check_backend() { # 1:backend
+check_backend() { # 1:backend
     case "$1" in
         alsa|amixer)         command -v amixer &>/dev/null ; return $? ;;
         pa|pulseaudio|pactl) command -v pactl &>/dev/null ; return $? ;;
@@ -54,15 +56,34 @@ function check_backend() { # 1:backend
     return 1
 }
 
-function default_channel() { # 1:backend
+default_card() { # 1:backend
+    local card
     case "$1" in
-        alsa|amixer)         echo "Master" ;;
-        pa|pulseaudio|pactl) echo "$(pactl info | sed -ne '/^Default Sink:/ s/^Default Sink: //p')" ;;
+        alsa|amixer)
+            for f in ~/.asoundrc /etc/asound.conf
+            do
+                [[ -f "$f" ]] || continue
+                card="$(sed -ne 's/^defaults.pcm.!card //p' "$f")" || { card=; continue; }
+                [[ -n "$card" ]] && break
+            done
+            ;;
+        pa|pulseaudio|pactl)
+            # No such thing as a card
+            ;;
+        *) return 1 ;;
+    esac
+    echo "$card"
+}
+
+default_channel() { # 1:backend 2:card
+    case "$1" in
+        alsa|amixer)         amixer ${2:+-c "$2"} scontrols | sed -ne 's/^Simple mixer control '\''\([^'\'']\+\)'\'',.*$/\1/p; q' ;;
+        pa|pulseaudio|pactl) pactl info | sed -ne '/^Default Sink:/ s/^Default Sink: //p' ;;
         *)                   return 1 ;;
     esac
 }
 
-function volume_get() {
+volume_get() {
     # Get the volume
     local get left right mono mute
     case "$backend" in
@@ -102,7 +123,7 @@ function volume_get() {
 
 
 # Check the arguments
-if [[ "$1" == "-h" || "$1" == "--help" ]]
+if [[ "$1" =~ ^(-h|--help)$ ]]
 then
     cat <<- EOF
 	  Usage: ${0##*/} [options] <actions>
@@ -139,16 +160,19 @@ eval set -- "$getopt"
 
 backend="$(default_backend)" || die "no available backend"
 frontend=naughty
-card=
-channel="$(default_channel "$backend")"
+card="$(default_card "$backend")" || die "no default card for backend: $backend"
+channel="$(default_channel "$backend" "$card")" || die "no channel for backend/card: $backend${card:+/$card}"
+card_set=false
 channel_set=false
 timeout=1
 while true
 do
     case "$1" in
         -b|--backend)
-            check_backend "$2" && backend="$2" || die "invalid backend: $2"
-            $channel_set || channel="$(default_channel "$backend")" || die "no channel for backend: $backend"
+            backend="$2"
+            check_backend "$backend" || die "invalid backend: $backend"
+            $card_set || card="$(default_card "$backend")" || die "no card for backend: $backend"
+            $channel_set || channel="$(default_channel "$backend" "$card")" || die "no channel for backend/card: $backend${card:+/$card}"
             shift
             ;;
         -f|--frontend)
@@ -157,6 +181,8 @@ do
             ;;
         -C|--card)
             card="$2"
+            card_set=true
+            $channel_set || channel="$(default_channel "$backend" "$card")" || die "no channel for backend/card: $backend${card:+/$card}"
             shift
             ;;
         -c|--channel)
