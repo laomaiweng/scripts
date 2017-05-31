@@ -7,9 +7,9 @@ shopt -s extglob
 
 function path() {
     # No argument: display help
-    if [[ $# -lt 1 ]]
+    if (( $# < 1 ))
     then
-        cat <<- _EOF_
+        cat <<-EOF
 		  Usage: $FUNCNAME <action> [options] <variable> [DIRS]
 		Manipulate path-like environment variables.
 		
@@ -49,7 +49,7 @@ function path() {
 		  man   ->  MANPATH
 		  *PATH ->  itself
 		  '*'   ->  all variables listed by 'show'
-		_EOF_
+		EOF
         return
     fi
     local black='\E[0m'           # Not real black: default setting, in fact
@@ -64,15 +64,15 @@ function path() {
 
     # Get action from arguments
     local selected_action="$1"
-    local actions=
+    local -a actions=
     case "$selected_action" in
-        "show"|"strip")
-            actions="$selected_action"
+        show|strip)
+            actions=("$selected_action")
             ;;
 
-        "append"|"prepend")
+        append|prepend)
             # Add 'strip' action before 'prepend' or 'append' to make sure DIRS are not in the path anymore
-            actions="strip $selected_action"
+            actions=(strip "$selected_action")
             ;;
 
         *)
@@ -132,30 +132,30 @@ function path() {
 
         # Process option
         case "$option" in
-            "e"|"export")
+            e|export)
                 export=1
                 ;;
 
-            "f"|"force")
+            f|force)
                 force=1
                 ;;
 
-            "g"|"glob")
+            g|glob)
                 glob=1
-                [[ "$actions" != "strip" ]] && { echo "Error: invalid option '$option' for action '$selected_action'!" >&2 ; return 1 ; }
+                [[ "$selected_action" != "strip" ]] && { echo "Error: invalid option '$option' for action '$selected_action'!" >&2 ; return 1 ; }
                 ;;
 
-            "n"|"nocolor")
+            n|nocolor)
                 black=
                 green=
                 ;;
 
-            "r"|"reset")
+            r|reset)
                 reset=1
-                [[ "$actions" != "show" ]] && { echo "Error: invalid option '$option' for action '$selected_action'!" >&2 ; return 1 ; }
+                [[ "$selected_action" != "show" ]] && { echo "Error: invalid option '$option' for action '$selected_action'!" >&2 ; return 1 ; }
                 ;;
 
-            "v"|"verbose")
+            v|verbose)
                 verbose=1
                 ;;
 
@@ -166,36 +166,37 @@ function path() {
             *)
                 echo "Error: unkown option '$option'!" >&2
                 return 1
+                ;;
         esac
     done
 
     # Get target path variable
-    local targets=
-    if [[ "$actions" == "show" && -z "$1" ]]
+    local -a targets=
+    if [[ "$selected_action" == "show" && -z "$1" ]]
     then
         # Show action with no path specified: show all path variables (including custom ones, except if reset)
         (( $reset )) && unset PATH_CUSTOM_VARIABLES
-        targets="PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH ${PATH_CUSTOM_VARIABLES[@]}"
+        targets=(PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH "${PATH_CUSTOM_VARIABLES[@]}")
     else
         case "$1" in
             bin)
-                targets=PATH
+                targets=(PATH)
                 ;;
 
             lib)
-                targets=LD_LIBRARY_PATH
+                targets=(LD_LIBRARY_PATH)
                 ;;
 
             pkc)
-                targets=PKG_CONFIG_PATH
+                targets=(PKG_CONFIG_PATH)
                 ;;
 
             inc)
-                targets="C_INCLUDE_PATH CPLUS_INCLUDE_PATH"
+                targets=(C_INCLUDE_PATH CPLUS_INCLUDE_PATH)
                 ;;
 
             man)
-                targets=MANPATH
+                targets=(MANPATH)
                 ;;
 
             *([[:word:]]))
@@ -212,16 +213,16 @@ function path() {
                 [[ $force -eq 0 && -z "$found" && "${1: -4}" != "PATH" ]] && { echo "Error: invalid path variable '$1'!" >&2 ; return 1 ; }
 
                 # Register the target as itself
-                targets=$1
+                targets=($1)
 
                 # If found, forget this variable if the --reset option has been given
                 [[ -n "$found" && $reset -eq 1 ]] && unset PATH_CUSTOM_VARIABLES[$found]
                 # Otherwise, remember the variable for later display with 'show'
-                [[ -z "$found" ]] && PATH_CUSTOM_VARIABLES+=("$targets")
+                [[ -z "$found" ]] && PATH_CUSTOM_VARIABLES+=("${targets[@]}")
                 ;;
 
             '*')
-                targets="PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH ${PATH_CUSTOM_VARIABLES[@]}"
+                targets=(PATH LD_LIBRARY_PATH PKG_CONFIG_PATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH MANPATH "${PATH_CUSTOM_VARIABLES[@]}")
                 ;;
 
             *)
@@ -234,16 +235,16 @@ function path() {
 
     # Process actions
     local a
-    for a in $actions
+    for a in "${actions[@]}"
     do
         case "$a" in
             # Show: force verbose
-            "show")
+            show)
                 verbose=1
                 ;;
 
             # Append|Prepend: add DIRS to the specified path variable
-            "append"|"prepend")
+            append|prepend)
                 # Build new path directories list
                 [[ -z "$1" ]] && { echo "Error: empty directory path in DIRS!" >&2 ; return 1 ; }
                 local newpath="$1"
@@ -257,16 +258,22 @@ function path() {
 
                 # Add new path directories list
                 local t
-                for t in $targets
+                for t in "${targets[@]}"
                 do
-                    [[ -z "${!t}" ]] && eval $t="\$newpath" || { [[ "$a" == "append" ]] && eval $t="\${!t}:\$newpath" || eval $t="\$newpath:\${!t}" ; }
+                    # If ${!t} is set, prepend/append it with a colon, otherwise just set it to the new path
+                    if [[ "$a" == "append" ]]
+                    then
+                        eval $t="\${!t:+\${!t}:}\$newpath"
+                    else
+                        eval $t="\$newpath\${!t:+:\${!t}}"
+                    fi
                 done
                 ;;
 
             # Strip: remove DIRS from the specified path variable
-            "strip")
+            strip)
                 local t
-                for t in $targets
+                for t in "${targets[@]}"
                 do
                     # Trick: wrap the path in ':' and replace inner ':' with '::'
                     local temppath=":${!t//:/::}:"
@@ -298,7 +305,7 @@ function path() {
     if (( $export ))
     then
         local t
-        for t in $targets
+        for t in "${targets[@]}"
         do
             export $t
         done
@@ -308,7 +315,7 @@ function path() {
     if (( $verbose ))
     then
         local t
-        for t in $targets
+        for t in "${targets[@]}"
         do
             echo -e "${green}$t =${black} ${!t}"
         done
