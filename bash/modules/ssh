@@ -7,9 +7,12 @@
 declare -a export SSH_AGENT_AUTOKEYS
 export SSH_AGENT_AUTOKEYS
 
+# Default lifetime of keys added to the agent
+export SSH_AGENT_LIFETIME=8h
+
 
 function ssh-agent-test() {
-    [[ $# -ne 1 ]] && { echo "Usage: $FUNCNAME <env-file>" >&2 ; return 1 ; }
+    (( $# != 1 )) && { echo "Usage: $FUNCNAME <env-file>" >&2 ; return 1 ; }
 
     local ssh_agent_envfile="$1"
 
@@ -17,10 +20,10 @@ function ssh-agent-test() {
     [[ ! -f "$ssh_agent_envfile" ]] && return 1
 
     # Source env file
-    . "$ssh_agent_envfile" &> /dev/null
+    . "$ssh_agent_envfile" &>/dev/null
     # Test the agent
-    ssh-add -l &> /dev/null
-    [[ $? -eq 2 ]] && return 1
+    ssh-add -l &>/dev/null
+    (( $? == 2 )) && return 1
 
     # All checks passed: valid agent
     return 0
@@ -28,20 +31,22 @@ function ssh-agent-test() {
 
 
 function ssh-agent-respawn() {
-    [[ $# -ne 1 ]] && { echo "Usage: $FUNCNAME <env-file>" >&2 ; return 1 ; }
+    (( $# != 1 )) && { echo "Usage: $FUNCNAME <env-file>" >&2 ; return 1 ; }
 
     local ssh_agent_envfile="$1"
 
     # Kill all existing agents for the current user
     # (SSH_AGENT_PID may not be set so we can't use `ssh-agent -k`)
-    killall -r -u "$(id -un)" ssh-agent
+    pkill -u "$USER" ssh-agent
+    # /!\ `killall ssh-agent` doesn't work here! For some reason it can't find
+    # any running ssh-agent processes.
 
     # Start the agent
-    ssh-agent -s > "$ssh_agent_envfile"
+    ssh-agent -t "$SSH_AGENT_LIFETIME" -s >"$ssh_agent_envfile"
     . "$ssh_agent_envfile"
 
-    # Add auto keys
-    ssh-add "${SSH_AGENT_AUTOKEYS[@]}"
+    # Add auto keys with year-long lifetime (except if leap year, ok)
+    ssh-add -t 365d "${SSH_AGENT_AUTOKEYS[@]}"
 
     return 0
 }
