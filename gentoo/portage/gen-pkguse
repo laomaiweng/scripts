@@ -1,0 +1,30 @@
+#!/bin/bash
+# gen-pkguse: generate a package.use file that sets USE flags to match those set for the currently installed packages
+#             put up in a haste after I lost my package.use and had no relevant backup
+
+# oh god
+
+cd /var/db/pkg || exit 2
+files=(*/*)
+for p in "${@:-${files[@]}}"
+do
+    printf . >&2    # progress report
+    vars="$(emerge -pvO1 ="$p" | sed -n -e 's/[^=]* \([^= ]\+=".*"\).*/\1/p')" || exit 1
+    [[ -n "$vars" ]] && printf '=%s %s\n' "$p" "$vars"
+done | sed -n -e '/\*/ p' | while read -r atom rest
+do
+    printf %s/%s%s $(qatom "$atom" | cut -d' ' -f 1,2,5)
+    grep -o '[^ =]\+="[^"]\+"' <<<"$rest" | sed -e 's/\([^=]\+\)="\([^"]\+\)"/\1 \2/' | while read -r type allflags
+    do
+        flags=()
+        while read -r flag
+        do
+            [[ "$flag" == -* ]] && flags+=("${flag:1:-1}") || flags+=("-${flag::-1}")
+        done < <(grep -o '[^ *]\+\*' <<<"$allflags")
+        (( ${#flags[@]} > 0 )) && {
+            [[ "$type" != USE ]] && printf ' %s:' "$type"
+            printf ' %s' "${flags[@]}"
+        }
+    done
+    printf ' # %s\n' "$atom"
+done | sort
