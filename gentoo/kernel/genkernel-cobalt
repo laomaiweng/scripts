@@ -150,14 +150,6 @@ do
     true=true
     shift
 done
-$splash || splash=      # if false, ${splash:+blah} must expand to null
-splash_valid=false
-for t in $(plymouth-set-default-theme --list)   # bad
-do
-    [[ "$splash_theme" == "$t" ]] && { splash_valid=true; break; }
-done
-$splash_valid || die "invalid splash theme: $splash_theme"
-(( $# > 0 )) && die "unhandled arguments: ${*@Q}"
 
 
 # Check requirements
@@ -192,6 +184,24 @@ then
     require equery --modules
     require dd --modules
     require base64 --modules
+fi
+if $splash
+then
+    require plymouth-set-default-theme --splash
+fi
+
+# Check splash settings validity
+if $splash
+then
+    splash_valid=false
+    for t in $(plymouth-set-default-theme --list)   # bad
+    do
+        [[ "$splash_theme" == "$t" ]] && { splash_valid=true; break; }
+    done
+    $splash_valid || die "invalid splash theme: $splash_theme"
+    (( $# > 0 )) && die "unhandled arguments: ${*@Q}"
+else
+    splash=         # if false, ${splash:+blah} must expand to null
 fi
 
 
