@@ -1,0 +1,165 @@
+#!/bin/bash
+#############################################################################
+#   instant                                                                 #
+#                                                                           #
+# Create a temporary directory and schedule its deletion using at(1).       #
+#                                                                           #
+# WARNING: Automatic scheduled deletion may not be a good idea when the     #
+#          temporary directory is not under the sole control of the user.   #
+#          This has not been extensively tested, but it may be possible for #
+#          other users with write permission to the directory or any of its #
+#          parents to replace it with symlink trickery in order to reach    #
+#          out and, upon expiration, delete unrelated directories for which #
+#          they do not have permission.                                     #
+#############################################################################
+
+##
+# TODO:
+# * --list: list existing temporary directories
+# * --cancel: cancel deletion for a temporary directory (use state directory of scripts to run, nop script to cancel?)
+# * --reschedule: reschedule deletion for a temporary directory (use state directory of scripts to run, nop script to cancel, then schedule new expiration?)
+# * other formats for the --secret part?
+# * support `at -t [[CC]YY]MMDDhhmm[.ss]` time format
+##
+
+
+#####################
+##### Constants #####
+#####################
+
+readonly version=0.1
+
+
+###################
+##### Globals #####
+###################
+
+path=""
+parents=false
+secret=false
+tmpdir=false
+name=
+expiration=
+
+
+#####################
+##### Functions #####
+#####################
+
+die() { # 1:rc *:message
+    local rc="$1"
+    shift
+    printf 'Error: %s\n' "$1"
+    shift
+    (( $# )) && printf '       %s\n' "$@"
+    exit "$rc"
+} >&2
+
+require() { # 1:binary|path
+    if [[ "${1::1}" == / ]]
+    then
+        [[ -e "$1" ]] || die 128 "missing resource: $1"
+    else
+        command -v "$1" &>/dev/null || die 128 "missing utility: $1"
+    fi
+}
+
+help() {
+    cat <<-EOF
+	  Usage: ${0##*/} [options] [name] expiration
+	
+	Create an ephemeral directory scheduled for deletion at its expiration date.
+	
+	Arguments:
+	  name              directory name
+	                    in combination with --secret, used as a prefix
+	  expiration        scheduled deletion date for the directory
+	                    format: 'now + 3 [minutes/hours/days/weeks]'
+	                            '03:14 2038-01-19'
+	                            (see at(1))
+	
+	Options:
+	  -p | --path <path>      directory path
+	  -P | --parents          create missing parent directories
+	  -s | --secret           generate a 256-bits nonce for the directory name
+	  -t | --tmpdir           prefix --path with \$TMPDIR
+	  -h | --help             this help
+	  -V | --version          print the version number
+	EOF
+    exit
+}
+
+parse_args() { # *:args
+    local getopt
+
+    [[ "$1" =~ ^(-h|--help)$ ]] && help
+
+    # Process options
+    getopt -T &>/dev/null
+    (( $? == 4 )) || die 128 "your getopt version is too old, get the enhanced getopt from util-linux!"
+    getopt="$(getopt -n "${0##*/}" -l path:,parents,secret,tmpdir,version -o +p:PstV -- "$@")" || exit 128
+    eval set -- "$getopt"
+
+    while true
+    do
+        case "$1" in
+            -p|--path) path="${2%/}"; shift;;
+            -P|--parents) parents=true;;
+            -s|--secret) secret=true;;
+            -t|--tmpdir) tmpdir=true;;
+            -V|--version)
+                printf '%s v%s\n' "${0##*/}" "$version"
+                exit
+                ;;
+            --) shift; break;;
+            *) die 128 "internal error!";;
+        esac
+        shift
+    done
+
+    # Fetch arguments
+    case "$#" in
+        0) die 2 "missing expiration";;
+        1) expiration="$1";;
+        2) name="$1"; expiration="$2";;
+        *) die 2 "too many arguments";;
+    esac
+
+    # Sanity checks
+    [[ "${path::1}" == / ]] && $tmpdir && die 2 "can't use an absolute --path with --tmpdir"
+}
+
+main() { # *:args
+    local dir opts output date
+
+    require cut
+    require dd
+    require mkdir
+    require rm      # though it'll only be called upon expiration
+    require xxd
+    require /dev/urandom
+
+    parse_args "$@"
+
+    # Create directory
+    $tmpdir && dir="${TMPDIR:-/tmp}/"
+    [[ -n "$path" ]] && dir+="$path/"
+    dir+="$name"
+    $secret && dir+="$(dd if=/dev/urandom count=1 bs=32 status=none | xxd -p -c32)"
+    opts=()
+    $parents && opts+=(--parents)
+    mkdir "${opts[@]}" -- "$dir" || die 1 "mkdir failed: $dir"
+
+    # Schedule deletion
+    output="$(at -v "$expiration" 2>&1 <<<"rm --one-file-system -rf -- \"$dir\"")" || die 1 "at failed: delete $dir @ $expiration"
+    date="$(cut -d$'\n' -f1 <<<"$output")"
+
+    printf "Created directory '%s' with expiration at %s.\n" "$dir" "$date"
+}
+
+
+################
+##### Body #####
+################
+
+main "$@"
