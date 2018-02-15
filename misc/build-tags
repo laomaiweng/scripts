@@ -11,5 +11,7 @@ if [[ -f .ignore ]]; then
 else
     # no .ignore
     ctags -R --extras=fq --fields=afikKlmnsSzt .
-    find . -type f \( $(printf -- "-name *.%s -o " "${exts[@]}") -false \) -print | cscope -b -i-
+    # disable pathname expansion since it occurs *after* command substitution and wrecks the arguments generated with $(printf -- " -name *.%s -o ") (and I can't seem to escape the *)
+    set -f
+    find . -type f \( $(printf -- '-name *.%s -o ' "${exts[@]}") -false \) -print | cscope -b -i-
 fi
