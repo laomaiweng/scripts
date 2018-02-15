@@ -1,0 +1,18 @@
+#!/bin/bash
+
+[[ "$1" =~ ^(-h|--help)$ ]] && { echo "${0##*/}: update the symlink for the LTO linker plugin to the current GCC version"; exit; }
+
+read -r tuple version <<< "$(gcc-config -S "$(gcc-config -c)")"
+ld_bin=/usr/bin/ld
+gcc_dir=/usr/libexec/gcc/$tuple/$version
+bfd_plugins_dir=/usr/x86_64-pc-linux-gnu/binutils-bin/lib/bfd-plugins
+lto_plugin=liblto_plugin.so
+
+
+ld_bin_real="$(readlink -e "$ld_bin")" || { echo "error: target of $ld_bin does not exist" >&2; exit 1; }
+[[ "${ld_bin_real##*/}" == ld.gold ]] || { echo 'warning: current linker is not ld.gold, swith to it with: binutils-config --linker ld.gold' >&2; }
+
+[[ -L "$bfd_plugins_dir/$lto_plugin" ]] && rm "$bfd_plugins_dir/$lto_plugin"
+[[ -e "$bfd_plugins_dir/$lto_plugin" ]] && { echo "error: LTO plugin $bfd_plugins_dir/$lto_plugin exists and is not a symlink" >&2; exit 1; }
+mkdir -p "$bfd_plugins_dir"
+ln -s "$gcc_dir/$lto_plugin" "$bfd_plugins_dir/$lto_plugin"
