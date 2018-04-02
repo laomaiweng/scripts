@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# Target output:
+#    .
+#    ├── config.dat
+#    ├── data
+#    │   ├── data1.bin
+#    │   ├── data2.sql
+#    │   └── data3.inf
+#    ├── images
+#    │   ├── background.jpg
+#    │   ├── icon.gif
+#    │   └── logo.jpg
+#    ├── program.exe
+#    └── readme.txt
+#    
+#    2 directories, 9 files             <--- optional
+
+die() {
+    printf 'error: %s\n' "$*"
+    exit 1
+} 1>&2
+
+ilsd() {
+    ls --color=always -d "$1" | sed -e "s/^/$indent/" || die "\`ls $1\` failed in $PWD"
+}
+
+walk() {
+    local _indent="$indent" d="$PWD" f i s n
+    cd "$1" || die "\`cd $1\` failed"
+    s=(*)
+    n=${#s[@]}
+    for ((i=0; i<n; i++)); do
+        f="${s[i]}"
+        ((i == n-1)) && indent="${_indent}└── " || indent="${_indent}├── "
+        ilsd "$f"
+        if [[ -d "$f" ]]; then
+            ((i == n-1)) && indent="${_indent}    " || indent="${_indent}│   "
+            walk "$f"
+        fi
+        indent="$_indent"
+    done
+    cd "$d" || die "\`cd $d\` failed"
+}
+
+shopt -s nullglob
+set -o pipefail         # needed in ilsd(), never disabled since that's the only pipeline in the script
+
+indent=
+
+path="$1"
+[[ -z "$path" ]] && path=.
+
+ilsd "${path%/}"
+if [[ -d "$path" ]]; then
+    walk "$path"
+fi
