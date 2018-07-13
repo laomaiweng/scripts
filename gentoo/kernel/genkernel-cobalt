@@ -34,7 +34,7 @@ help() {
 	Builds a kernel and its integrated initramfs with LUKS, LVM, and the
 	fr-bépo keymap, but without modules and HW detection logic.
 	Can also include boot splash with Plymouth, update Grub, sign (for Secure
-	Boot) and install the kernel to an EFI partition, and \`emerge
+	Boot) and install the kernel to an EFI System partition, and \`emerge
 	@module-rebuild\` (and sign the modules).
 	
 	The kernel is configured and built in \$KERNELDIR (default "/usr/src/linux"):
@@ -45,7 +45,7 @@ help() {
     if [[ "$1" == "full" ]]
     then
         cat <<-EOF
-		The EFI partition is mounted at \$EFIPART (default "/boot/efi"):
+		The EFI System partition is mounted at \$EFIPART (default "/boot/efi"):
 		    ${EFIPART:-(empty)}
 		The EFI kernel path is \$EFIKERNEL (default "/EFI/Boot/gentoo.efi"):
 		    ${EFIKERNEL:-(empty)}
@@ -65,7 +65,7 @@ help() {
 	
 	Options:
 	    -n                          negate a following short option
-	    -e | --[no-]efi             update the EFI partition
+	    -e | --[no-]efi             update the EFI System partition
 	                                (default: enabled)
 	    -g | --[no-]grub            update Grub
 	                                (default: disabled)
@@ -89,7 +89,8 @@ verbosedo() {   # 1:error_message *:command
     "$@" || die "$err"
 }
 cleanup() {
-    $efipart_mounted && { umount "$EFIPART" || echo "Error: failed to unmount EFI partition at $EFIPART"; }
+    [[ "$efivarfs_access" == ro ]] && { mount -o remount,ro efivarfs || echo "Error: failed to remount efivarfs filesystem read-only"; }
+    $efipart_mounted && { umount "$EFIPART" || echo "Error: failed to unmount EFI System partition at $EFIPART"; }
 }
 
 
@@ -175,7 +176,7 @@ then
     require tail --efi
     require mv --efi
     require cp --efi
-    [[ "${EFIKERNEL:0:1}" == "/" ]] || die "\$EFIKERNEL must be an absolute path on the EFI partition: $EFIKERNEL"
+    [[ "${EFIKERNEL:0:1}" == "/" ]] || die "\$EFIKERNEL must be an absolute path on the EFI System partition: $EFIKERNEL"
 fi
 if $modules
 then
@@ -271,19 +272,35 @@ if $efi
 then
     echo
 
-    # Get information on the EFI partition
+    # Get information on the EFI system partition
     if ! mountpoint -q "$EFIPART"
     then
-        mount "$EFIPART" || die "failed to mount EFI partition at $EFIPART"
+        mount "$EFIPART" || die "failed to mount EFI System partition at $EFIPART"
         efipart_mounted=true
-        echo "Mounted EFI partition: $EFIPART"
+        echo "Mounted EFI System partition: $EFIPART"
     fi
-    efinode="$(mountpoint -d "$EFIPART")" || die "failed to mount EFI partition at $EFIPART"
-    IFS=: read -r efimajor efiminor <<<"$efinode" || die "can't get EFI partition major/minor numbers"
-    [[ -d /sys/dev/block/"$efinode" ]] || die "EFI partition is not a block device"
+    efinode="$(mountpoint -d "$EFIPART")" || die "failed to mount EFI System partition at $EFIPART"
+    IFS=: read -r efimajor efiminor <<<"$efinode" || die "can't get EFI System partition major/minor numbers"
+    [[ -d /sys/dev/block/"$efinode" ]] || die "EFI System partition is not a block device"
     efidisk=/dev/"$(sed -n -e 's/^DEVNAME=//p' /sys/dev/block/"$efimajor":0/uevent)"
     efiuuid="$(blkid -s PARTUUID -o value "${efidisk}${efiminor}")"
     efipath="${EFIPART}${EFIKERNEL}"
+
+    # Ensure the efivarfs filesystem is mounted read-write
+    IFS=, read -a efivarfsopts <<<"$(mount | sed -n -e 's/^efivarfs on [^ ]\+ type efivarfs (\([^)]\+\))$/\1/p')"
+    (( ${#efivarfsopts[@]} != 0 )) || die "efivarfs filesystem not mounted"
+    efivarfs_access=
+    for opt in "${efivarfsopts[@]}"
+    do
+        case "$opt" in
+            ro|rw) efivarfs_access="$opt" ;;
+        esac
+    done
+    case "$efivarfs_access" in
+        ro) mount -o remount,rw efivarfs || die "failed to remount efivarfs filesystem read-write" ;;
+        rw) ;;
+        *) die "can't determine access mode (ro/rw) for efivarfs filesystem" ;;
+    esac
 
     # Set up an EFI boot entry
     echo
@@ -330,19 +347,25 @@ then
         echo "  * ${bootnum}${active#a:}: \"$label\" HD($hd)/File($file)"
     fi
 
-    # Install the new kernel to the EFI partition
+    # Install the new kernel to the EFI System partition
     echo
-    echo "Installing kernel to EFI partition:"
+    echo "Installing kernel to EFI System partition:"
     [[ -f "$efipath" ]] && verbosedo "backup current EFI kernel failed" mv -fT "$efipath"{,.old}
     verbosedo "install new EFI kernel failed" cp -fLT /boot/kernel "$efipath"
+
+    # Restore access mode for the efivarfs filesystem
+    if [[ "$efivarfs_access" == ro ]]
+    then
+        mount -o remount,ro efivarfs || die "failed to remount efivarfs filesystem read-only"
+    fi
 
     # Unmount the partition
     if $efipart_mounted
     then
         efipart_mounted=false
-        umount "$EFIPART" || echo "Error: failed to unmount EFI partition at $EFIPART"
+        umount "$EFIPART" || die "failed to unmount EFI System partition at $EFIPART"
         echo
-        echo "Unmounted EFI partition: $EFIPART"
+        echo "Unmounted EFI System partition: $EFIPART"
     fi
 fi
 
