@@ -17,6 +17,7 @@ bashmod die
 : "${EFIPART:=/boot/efi}"
 : "${EFIKERNEL:=/EFI/Boot/gentoo.efi}"
 : "${EFILABEL:=Gentoo Linux}"
+: "${EFIVARFS:=efivarfs}"
 : "${PLYMOUTHDCONF:=/etc/plymouth/plymouthd.conf}"
 EMERGEOPTS=( $EMERGEOPTS )
 
@@ -51,6 +52,8 @@ help() {
 		    ${EFIKERNEL:-(empty)}
 		The EFI boot label is \$EFILABEL (default "Gentoo Linux"):
 		    ${EFILABEL:-(empty)}
+		The EFI variables filesystem is \$EFIVARFS (default "efivarfs"):
+		    ${EFIVARFS:-efivarfs}
 		The Grub configuration file is \$GRUBCFG (default "/boot/grub/grub.cfg"):
 		    ${GRUBCFG:-(empty)}
 		The Plymouth configuration file is \$PLYMOUTHDCONF (default "/etc/plymouth/plymouthd.conf"):
@@ -89,7 +92,7 @@ verbosedo() {   # 1:error_message *:command
     "$@" || die "$err"
 }
 cleanup() {
-    [[ "$efivarfs_access" == ro ]] && { mount -o remount,ro efivarfs || echo "Error: failed to remount efivarfs filesystem read-only"; }
+    [[ "$efivarfs_access" == ro ]] && { mount -o remount,ro "$EFIVARFS" || echo "Error: failed to remount EFI variables filesystem $EFIVARFS read-only"; }
     $efipart_mounted && { umount "$EFIPART" || echo "Error: failed to unmount EFI System partition at $EFIPART"; }
 }
 
@@ -286,9 +289,9 @@ then
     efiuuid="$(blkid -s PARTUUID -o value "${efidisk}${efiminor}")"
     efipath="${EFIPART}${EFIKERNEL}"
 
-    # Ensure the efivarfs filesystem is mounted read-write
-    IFS=, read -a efivarfsopts <<<"$(mount | sed -n -e 's/^efivarfs on [^ ]\+ type efivarfs (\([^)]\+\))$/\1/p')"
-    (( ${#efivarfsopts[@]} != 0 )) || die "efivarfs filesystem not mounted"
+    # Ensure the EFI variables filesystem is mounted read-write
+    IFS=, read -a efivarfsopts <<<"$(mount | sed -n -e 's/^'"$EFIVARFS"' on [^ ]\+ type efivarfs (\([^)]\+\))$/\1/p')"
+    (( ${#efivarfsopts[@]} != 0 )) || die "EFI variables filesystem not mounted as $EFIVARFS"
     efivarfs_access=
     for opt in "${efivarfsopts[@]}"
     do
@@ -297,9 +300,11 @@ then
         esac
     done
     case "$efivarfs_access" in
-        ro) mount -o remount,rw efivarfs || die "failed to remount efivarfs filesystem read-write" ;;
+        ro) mount -o remount,rw "$EFIVARFS" || die "failed to remount EFI variables filesystem read-write: $EFIVARFS"
+            echo "Remounted EFI variables filesystem read-write: $EFIVARFS"
+            ;;
         rw) ;;
-        *) die "can't determine access mode (ro/rw) for efivarfs filesystem" ;;
+        *) die "can't determine access mode (ro/rw) for EFI variables filesystem: $EFIVARFS" ;;
     esac
 
     # Set up an EFI boot entry
@@ -353,10 +358,11 @@ then
     [[ -f "$efipath" ]] && verbosedo "backup current EFI kernel failed" mv -fT "$efipath"{,.old}
     verbosedo "install new EFI kernel failed" cp -fLT /boot/kernel "$efipath"
 
-    # Restore access mode for the efivarfs filesystem
+    # Restore access mode for the EFI variables filesystem
     if [[ "$efivarfs_access" == ro ]]
     then
-        mount -o remount,ro efivarfs || die "failed to remount efivarfs filesystem read-only"
+        mount -o remount,ro "$EFIVARFS" || die "failed to remount EFI variables filesystem read-only: $EFIVARFS"
+        echo "Remounted EFI variables filesystem read-only: $EFIVARFS"
     fi
 
     # Unmount the partition
