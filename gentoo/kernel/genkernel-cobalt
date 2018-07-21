@@ -12,6 +12,7 @@ bashmod die
 
 # Environment variables
 : "${KERNELDIR:=/usr/src/linux}"
+: "${KERNELENV:=$KERNELDIR/.gkenv}"
 : "${KERNELCONF:=$KERNELDIR/.config.cobalt}"
 : "${GRUBCFG:=/boot/grub/grub.cfg}"
 : "${EFIPART:=/boot/efi}"
@@ -20,6 +21,11 @@ bashmod die
 : "${EFIVARFS:=efivarfs}"
 : "${PLYMOUTHDCONF:=/etc/plymouth/plymouthd.conf}"
 EMERGEOPTS=( $EMERGEOPTS )
+
+if [[ -f "$KERNELENV" ]]
+then
+    source "$KERNELENV" || die "failed to source configuration variables from $KERNELENV"
+fi
 
 # Global variables
 efipart_mounted=false
@@ -65,6 +71,8 @@ help() {
 		EOF
     fi
 	cat <<-EOF
+	
+	Configuration variables are sourced from \$KERNELDIR/.gkenv if it exists.
 	
 	Options:
 	    -n                          negate a following short option
