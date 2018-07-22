@@ -17,6 +17,7 @@ bashmod die
 : "${GRUBCFG:=/boot/grub/grub.cfg}"
 : "${EFIPART:=/boot/efi}"
 : "${EFIKERNEL:=/EFI/Boot/gentoo.efi}"
+: "${EFIOLDKERNEL:=$EFIKERNEL.old}"
 : "${EFILABEL:=Gentoo Linux}"
 : "${EFIVARFS:=efivarfs}"
 : "${PLYMOUTHDCONF:=/etc/plymouth/plymouthd.conf}"
@@ -56,6 +57,8 @@ help() {
 		    ${EFIPART:-(empty)}
 		The EFI kernel path is \$EFIKERNEL (default "/EFI/Boot/gentoo.efi"):
 		    ${EFIKERNEL:-(empty)}
+		The EFI old kernel path is \$EFIOLDKERNEL (default "\$EFIKERNEL.old"):
+		    ${EFIOLDKERNEL:-(empty)}
 		The EFI boot label is \$EFILABEL (default "Gentoo Linux"):
 		    ${EFILABEL:-(empty)}
 		The EFI variables filesystem is \$EFIVARFS (default "efivarfs"):
@@ -263,6 +266,10 @@ then
     verbosedo "kernel unlock failed" umask "$umask"
 fi
 
+# Get the version number
+kernelversionfile="$builddir/include/config/kernel.release"
+kernelversion="$(<"$kernelversionfile")" 2>/dev/null || die "read kernel version from $kernelversionfile failed"
+
 
 ## Update Grub
 if $grub
@@ -296,6 +303,7 @@ then
     efidisk=/dev/"$(sed -n -e 's/^DEVNAME=//p' /sys/dev/block/"$efimajor":0/uevent)"
     efiuuid="$(blkid -s PARTUUID -o value "${efidisk}${efiminor}")"
     efipath="${EFIPART}${EFIKERNEL}"
+    [[ -n "$EFIOLDKERNEL" ]] && efioldpath="${EFIPART}${EFIOLDKERNEL}"
 
     # Ensure the EFI variables filesystem is mounted read-write
     IFS=, read -a efivarfsopts <<<"$(mount | sed -n -e 's/^'"$EFIVARFS"' on [^ ]\+ type efivarfs (\([^)]\+\))$/\1/p')"
@@ -363,22 +371,36 @@ then
     # Install the new kernel to the EFI System partition
     echo
     echo "Installing kernel to EFI System partition:"
-    [[ -f "$efipath" ]] && verbosedo "backup current EFI kernel failed" mv -fT "$efipath"{,.old}
-    verbosedo "install new EFI kernel failed" cp -fLT /boot/kernel "$efipath"
+    if [[ -n "$efioldpath" ]]
+    then
+        if [[ -f "$efipath" ]]
+        then
+            verbosedo "backup current EFI kernel failed" mv -fT "$efipath" "$efioldpath"
+        else
+            skipmsg="Skipped backup of $efipath: no previous kernel at $efipath"
+        fi
+    else
+        skipmsg="Skipped backup of $efipath: empty \$EFIOLDKERNEL"
+    fi
+    verbosedo "install new EFI kernel failed" cp -fLT "/boot/kernel-$(uname -n)-$(uname -m)-$kernelversion" "$efipath"
+    [[ -n "$skipmsg" ]] && echo "$skipmsg"
 
     # Restore access mode for the EFI variables filesystem
     if [[ "$efivarfs_access" == ro ]]
     then
+        efivarfs_access=
+        echo
+        newlined=true
         mount -o remount,ro "$EFIVARFS" || die "failed to remount EFI variables filesystem read-only: $EFIVARFS"
         echo "Remounted EFI variables filesystem read-only: $EFIVARFS"
     fi
 
-    # Unmount the partition
+    # Unmount the EFI system partition
     if $efipart_mounted
     then
         efipart_mounted=false
+        [[ -z "$newlined" ]] && echo
         umount "$EFIPART" || die "failed to unmount EFI System partition at $EFIPART"
-        echo
         echo "Unmounted EFI System partition: $EFIPART"
     fi
 fi
@@ -400,10 +422,9 @@ then
     echo
     echo
     echo "Signing modules:"
-    kernelversion="$(< "$builddir/include/config/kernel.release")"
     sigtext="~Module signature appended~"
     count=0
-    for module in $(equery f $(equery b "/lib/modules/$kernelversion") | grep '^/lib/modules/'"$kernelversion"'/.*\.ko$')
+    for module in $(equery f $(equery b "/lib/modules/$kernelversion") | grep '^/lib/modules/'"${kernelversion//./\\.}"'/.*\.ko$')
     do
         (( count++ ))
         echo -n "$module "
