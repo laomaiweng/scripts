@@ -2,7 +2,7 @@
 
 if (( $# != 1 )) || [[ "$1" =~ ^(-h|--help)$ ]]
 then
-    echo "  Usage: ${0##*/} <size>
+    echo "  Usage: ${0##*/} <size> [label]
 
 Mount the Portage build directory as a tmpfs. The size can be given in
 human-readable format or as a percentage of total RAM.
@@ -17,6 +17,7 @@ function die() {
 } >&2
 
 size="$1"
+label="${2:-emerge}"
 
 # Tentative mount to let `mount' parse the tmpfs size
 tmpmount="$(mktemp -d)" || die "dummy mktemp failed"
@@ -55,6 +56,6 @@ fi
 
 # Actual mount
 IFS=,
-mount -t tmpfs -o "${opts[*]}" tmpfs "$PORTAGE_TMPDIR" || die "mount failed"
+mount -t tmpfs -o "${opts[*]}" "$label" "$PORTAGE_TMPDIR" || die "mount failed"
 unset IFS
 echo "$PORTAGE_TMPDIR ${re}mounted with size $(findmnt -rnu -o SIZE "$PORTAGE_TMPDIR")."
