@@ -29,18 +29,45 @@
 # Build full name
 [[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
 
-# Source required modules (bashmod first, then use it for the others)
-[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/modules/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
-       with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
-source "$BASH_MODULES_SCRIPT"
-bashmod die
-bashmod tilde
+# Enable extended globbing, required for tilde()
+shopt -s extglob
+
 
 # Define some constants
 version=0.6b
 
 
 # Define some helper functions
+
+# die: print an error message and exit
+function die() { # *:message
+    printf "Error: %s\n" "$*"
+    exit 1
+} >&2
+
+# tilde: perform tilde expansion on a string
+function tilde() {
+    # NB: Upon error, tilde outputs its input string as is and returns a non-0 error code
+    #     This means that in any case, tilde's output is still safe to use
+
+    # Get the pattern to expand
+    local PREFIX="${1%%/*}"
+    # Make sure there's actually a tilde to expand
+    # /!\ To be on the safe side, only accept paths composed of a restricted set of characters!
+    [[ "$PREFIX" == ~*([[:alnum:]_-]) ]] || { echo "$1" ; return 1 ; }
+    # Perform expansion with/without trailing path
+    if [[ "$PREFIX" == "$1" ]]
+    then
+        # Expansion is left to Bash, to ensure Bash-like behavior
+        eval echo $PREFIX
+    else
+        # Expansion is left to Bash, to ensure Bash-like behavior
+        eval echo -n $PREFIX
+        # Print the remainder of the path as is
+        echo "/${1#*/}"
+    fi
+}
+
 # checklog: log an aligned message about some checked file and update the global return code
 function checklog() { # 1:code 2:message 3:file 4:reference
     local malign=23                  # Message alignment
@@ -140,7 +167,7 @@ fi
 
 # Process options
 getopt -T &> /dev/null
-(( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
+(( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
 getopt="$(getopt -n "${0##*/}" -l fix-broken,no-colors,fix-diverged,diff::,fix,fix-missing,quiet,fix-unreachable,version -o +bcdD::fmquV -- "$@")"
 (( $? != 0 )) && exit 128
 eval set -- "$getopt"
@@ -174,16 +201,16 @@ do
             shift
             break
             ;;
-        *) die -r128 "internal error!" ;;
+        *) die "internal error!" ;;
     esac
     shift
 done
 # Test for remaining arguments
-(( $# < 1 )) && die -r128 "missing hardlinks file"
+(( $# < 1 )) && die "missing hardlinks file"
 # Test for valid hardlinks files
 for f in "$@"
 do
-    [[ ! -r "$f" ]] && die -r128 "invalid hardlinks file '$f'"
+    [[ ! -r "$f" ]] && die "invalid hardlinks file '$f'"
 done
 
 # For each hardlinks file
@@ -306,4 +333,3 @@ done
 
 # Return the global return code
 exit $rc
-

@@ -5,11 +5,11 @@
 # Build full name
 [[ "${0:0:1}" == "/" ]] && FULL_0="$0" || FULL_0="$PWD/$0"
 
-# Source required modules (bashmod first, then use it for the others)
-[[ ! -r "${BASH_MODULES_SCRIPT=${FULL_0%/*}/../../bash/modules/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
-       with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
-source "$BASH_MODULES_SCRIPT"
-bashmod die
+# Functions
+die() { # *:message
+    printf "Error: %s\n" "$*"
+    exit 1
+} >&2
 
 # Help message
 if [[ "$1" == "-h" || "$1" == "--help" ]]
@@ -35,7 +35,7 @@ STATUS=$?
 SIZE=$(echo "$SIZE" | tail -n 1 | cut -f1)
 if [[ $STATUS != 0 ]]
 then
-    [[ $SIZE == 0 ]] && die -i -r0 "Directory $DISTDIR is empty."
+    [[ $SIZE == 0 ]] && { echo "Directory $DISTDIR is empty."; exit 0; }
     die "failed to stat contents of $DISTDIR"
 fi
 
@@ -44,4 +44,3 @@ echo -n "Purge $DISTDIR? ($SIZE) [y/N] "
 declare -u ANS
 read ANS
 [[ "$ANS" == "Y" ]] && rm -Rf "$DISTDIR"/*
-

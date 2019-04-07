@@ -4,10 +4,11 @@
 # Build full name
 [[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
 
-# Source required modules (bashmod first, then use it for the others)
-[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/modules/bashmod}" ]] && { printf "Error: This script requires the 'bashmod' module, please specify its path\n       with the BASH_MODULES_SCRIPT environment variable.\n" ; exit 255 ; }
-source "$BASH_MODULES_SCRIPT"
-bashmod die
+# Functions
+die() { # *:message
+    printf "Error: %s\n" "$*"
+    exit 1
+} >&2
 
 # Define constants
 gpg=gpg2

@@ -4,11 +4,6 @@
 # Build full name
 [[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
 
-# Source required modules (bashmod first, then use it for the others)
-[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/modules/bashmod}" ]] && { printf "Error: This script requires the 'bashmod' module, please specify its path\n       with the BASH_MODULES_SCRIPT environment variable.\n" ; exit 255 ; }
-source "$BASH_MODULES_SCRIPT"
-bashmod die
-
 if (( $# < 1 )) || [[ "$1" =~ ^(-h|--help)$ ]]
 then
     cat <<- EOF
@@ -36,6 +31,11 @@ then
 	EOF
     exit
 fi
+
+function die() { # *:message
+    printf "Error: %s\n" "$*"
+    exit 1
+} >&2
 
 function require() {    #1:tool [2:variable] [3+:paths]
     local tool="$1"
@@ -90,7 +90,7 @@ shopt -s nocasematch
 
 # Parse command line
 getopt -T &> /dev/null
-(( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
+(( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
 getopt="$(getopt -n "${0##*/}" -l quiet,reverse -o qR -- "$@")"
 (( $? != 0 )) && exit 128
 eval set -- "$getopt"
@@ -104,13 +104,13 @@ do
         -q|--quiet) quiet=true ;;
         -R|--reverse) reverse=true ;;
         --) shift ; break ;;
-        *) die -r128 "internal error!" ;;
+        *) die "internal error!" ;;
     esac
     shift
 done
 
 # Process directories
-(( $# < 1 )) && die -r128 "missing directories"
+(( $# < 1 )) && die "missing directories"
 for d in "$@"
 do
     if ! [[ -d "$d" ]]

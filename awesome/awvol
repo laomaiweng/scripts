@@ -15,19 +15,16 @@
 #############################################################################
 
 
-# Source required modules (bashmod first, then use it for the others)
-[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
-[[ ! -r "${BASH_MODULES_SCRIPT=${full_0%/*}/../bash/modules/bashmod}" ]] && { echo "Error: This script requires the 'bashmod' module, please specify its path
-       with the BASH_MODULES_SCRIPT environment variable." ; exit 255 ; }
-source "$BASH_MODULES_SCRIPT"
-bashmod die
-
-
 # Constants definitions
 version=0.4
 
 
 # Function definitions
+die() { # *:message
+    printf "Error: %s\n" "$*"
+    exit 1
+} >&2
+
 regexp_escape() { # 1:string
     sed -e 's/\./\\./g' -e 's,/,\/,g' <<< "$1"
 }
@@ -154,7 +151,7 @@ fi
 
 # Process options
 getopt -T &> /dev/null
-(( $? != 4 )) && die -r128 "your getopt version is too old, get the enhanced getopt from util-linux!"
+(( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
 getopt="$(getopt -n "${0##*/}" -l backend:,frontend:,card:,channel:,timeout:,version -o +b:f:C:c:t:V -- "$@")" || exit 128
 eval set -- "$getopt"
 

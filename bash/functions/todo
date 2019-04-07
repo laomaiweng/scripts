@@ -1,13 +1,11 @@
 #!/bin/bash
-# todo - main function for the todo module
+# todo - print directory todos upon directory change
 
 function todo() {
     # Test for utilities and load modules
-    command -v bashmod &> /dev/null || { echo "Error: missing utility 'bashmod'" ; return 1 ; }
-    bashmod die || { echo "Error: missing Bash module 'die'" ; return 1 ; }
-    command -v getopt &> /dev/null || { echo "Error: missing utility 'getopt'" ; return 1 ; }
+    command -v getopt &> /dev/null || { printf "Error [%s]: %s\n" "$FUNCNAME" "missing utility 'getopt'" >&2; return 1 ; }
     getopt -T &> /dev/null
-    (( $? == 4 )) || die "your getopt version is too old, get the enhanced getopt from util-linux!"
+    (( $? == 4 )) || { printf "Error [%s]: %s\n" "$FUNCNAME" "your getopt version is too old, get the enhanced getopt from util-linux!" >&2; return 1; }
 
     # Define constants
     local version=0.1
@@ -48,6 +46,8 @@ function todo() {
 				    -q|--quiet      don't display an error message if the
 				                    directory contains no TODO file
 				
+				Environment variables:
+				  TODO_FILENAME     TODO filename (default: TODO)
 				_EOF_
 
                 return 0
@@ -62,7 +62,10 @@ function todo() {
                 shift
                 break
                 ;;
-            *) die "internal error!" ;;
+            *)
+                printf "Error [%s]: %s\n" "$FUNCNAME" "internal error!" >&2
+                return 1
+                ;;
         esac
         shift
     done
@@ -83,11 +86,14 @@ function todo() {
                         shift
                         break
                         ;;
-                    *) die "internal error!" ;;
+                    *)
+                        printf "Error [%s]: %s\n" "$FUNCNAME" "internal error!" >&2
+                        return 1
+                        ;;
                 esac
                 shift
             done
-            (( $# != 0 )) && die "too many arguments"
+            (( $# == 0 )) || { printf "Error [%s]: %s\n" "$FUNCNAME" "too many arguments" >&2; return 1; }
 
             # Resolve the 'toggle' action
             [[ "$action" == "toggle" ]] && { [[ "$(type -t cd)" == "function" ]] && action=off || action=on ; }
@@ -128,11 +134,14 @@ function todo() {
                         shift
                         break
                         ;;
-                    *) die "internal error!" ;;
+                    *)
+                        printf "Error [%s]: %s\n" "$FUNCNAME" "internal error!" >&2
+                        return 1
+                        ;;
                 esac
                 shift
             done
-            (( $# != 0 )) && die "too many arguments"
+            (( $# == 0 )) || { printf "Error [%s]: %s\n" "$FUNCNAME" "too many arguments" >&2; return 1; }
 
             # Print the TODO
             local print_failed=false
@@ -158,7 +167,7 @@ function todo() {
 
         "status")
             # Parse options
-            (( $# != 0 )) && die "too many arguments"
+            (( $# == 0 )) || { printf "Error [%s]: %s\n" "$FUNCNAME" "too many arguments" >&2; return 1; }
 
             # Display status information
             local status
@@ -167,15 +176,12 @@ function todo() {
             ;;
 
         "")
-            die "missing action"
+            printf "Error [%s]: %s\n" "$FUNCNAME" "missing action" >&2
+            return 1
             ;;
         *)
-            die "unknown action '$action'"
+            printf "Error [%s]: %s\n" "$FUNCNAME" "unknown action '$action'" >&2
+            return 1
             ;;
     esac
 }
-
-
-# Enable TODO auto-print
-todo on -q
-
