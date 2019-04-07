@@ -3,9 +3,9 @@
 
 function todo() {
     # Test for utilities and load modules
-    command -v getopt &> /dev/null || { printf "Error [%s]: %s\n" "$FUNCNAME" "missing utility 'getopt'" >&2; return 1 ; }
+    command -v getopt &> /dev/null || { printf "Error: %s: %s\n" "$FUNCNAME" "missing utility 'getopt'" >&2; return 1 ; }
     getopt -T &> /dev/null
-    (( $? == 4 )) || { printf "Error [%s]: %s\n" "$FUNCNAME" "your getopt version is too old, get the enhanced getopt from util-linux!" >&2; return 1; }
+    (( $? == 4 )) || { printf "Error: %s: %s\n" "$FUNCNAME" "your getopt version is too old, get the enhanced getopt from util-linux!" >&2; return 1; }
 
     # Define constants
     local version=0.1
@@ -25,7 +25,7 @@ function todo() {
         case "$1" in
             -h|--help)
                 cat <<- _EOF_
-				  Usage: $FUNCNAME [generic options] <action> [action options]
+				  Usage: $FUNCNAME [generic options] [action] [action options]
 				
 				Control the TODO Bash module.
 				
@@ -33,7 +33,7 @@ function todo() {
 				    -h|--help       print this help
 				    -V|--version    print the version number
 				
-				Actions:
+				Actions:            (default: print)
 				    on|off|toggle   enable/disable/toggle auto-print of a
 				                    directory's TODO file upon \`cd\`
 				    p|print         print the TODO for the current directory
@@ -47,7 +47,7 @@ function todo() {
 				                    directory contains no TODO file
 				
 				Environment variables:
-				  TODO_FILENAME     TODO filename (default: TODO)
+				  TODO_FILENAME     TODO filename (default: TODO, current: $todo_filename)
 				_EOF_
 
                 return 0
@@ -63,7 +63,7 @@ function todo() {
                 break
                 ;;
             *)
-                printf "Error [%s]: %s\n" "$FUNCNAME" "internal error!" >&2
+                printf "Error: %s: %s\n" "$FUNCNAME" "internal error!" >&2
                 return 1
                 ;;
         esac
@@ -87,13 +87,13 @@ function todo() {
                         break
                         ;;
                     *)
-                        printf "Error [%s]: %s\n" "$FUNCNAME" "internal error!" >&2
+                        printf "Error: %s: %s\n" "$FUNCNAME" "internal error!" >&2
                         return 1
                         ;;
                 esac
                 shift
             done
-            (( $# == 0 )) || { printf "Error [%s]: %s\n" "$FUNCNAME" "too many arguments" >&2; return 1; }
+            (( $# == 0 )) || { printf "Error: %s: %s\n" "$FUNCNAME" "too many arguments" >&2; return 1; }
 
             # Resolve the 'toggle' action
             [[ "$action" == "toggle" ]] && { [[ "$(type -t cd)" == "function" ]] && action=off || action=on ; }
@@ -120,7 +120,7 @@ function todo() {
             $quiet || echo "auto-print: $action"
             ;;
 
-        "p"|"print")
+        ""|"p"|"print")
             # Parse options
             getopt="$(getopt -n "$FUNCNAME" -l quiet -o +q -- "$@")"
             (( $? != 0 )) && return 1
@@ -135,13 +135,13 @@ function todo() {
                         break
                         ;;
                     *)
-                        printf "Error [%s]: %s\n" "$FUNCNAME" "internal error!" >&2
+                        printf "Error: %s: %s\n" "$FUNCNAME" "internal error!" >&2
                         return 1
                         ;;
                 esac
                 shift
             done
-            (( $# == 0 )) || { printf "Error [%s]: %s\n" "$FUNCNAME" "too many arguments" >&2; return 1; }
+            (( $# == 0 )) || { printf "Error: %s: %s\n" "$FUNCNAME" "too many arguments" >&2; return 1; }
 
             # Print the TODO
             local print_failed=false
@@ -167,7 +167,7 @@ function todo() {
 
         "status")
             # Parse options
-            (( $# == 0 )) || { printf "Error [%s]: %s\n" "$FUNCNAME" "too many arguments" >&2; return 1; }
+            (( $# == 0 )) || { printf "Error: %s: %s\n" "$FUNCNAME" "too many arguments" >&2; return 1; }
 
             # Display status information
             local status
@@ -175,12 +175,8 @@ function todo() {
             echo "auto-print: $status"
             ;;
 
-        "")
-            printf "Error [%s]: %s\n" "$FUNCNAME" "missing action" >&2
-            return 1
-            ;;
         *)
-            printf "Error [%s]: %s\n" "$FUNCNAME" "unknown action '$action'" >&2
+            printf "Error: %s: %s\n" "$FUNCNAME" "unknown action '$action'" >&2
             return 1
             ;;
     esac
