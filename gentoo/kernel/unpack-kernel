@@ -91,8 +91,8 @@ echo "Copied $kimage into $kimagetrunc with CPIO archive at offset $offset trunc
 
 ## Extract config.gz
 offsets=( $(binwalk -ygz "$kimage" | sed -ne 's/^\([0-9]\+\).*$/\1/p') ) || die "can't find GZIP archive in $kimage"
-(( ${#offsets[@]} > 1 )) && die "found multiple GZIP blobs in $kimage"
 (( ${#offsets[@]} == 0 )) && die "found no GZIP blob in $kimage"
+(( ${#offsets[@]} > 1 )) && echo "Found multiple GZIP blobs in $kimage, extracting first one as kernel config."
 offset="${offsets[0]}"
 dd if="$kimage" skip="$offset" iflag=skip_bytes status=none | gzip -dcq >"$config"      # non-0 exit code expected, input has trailing junk
 (( $? == 0 || $? == 2 )) || die "can't extract GZIP archive at offset $offset in $kimage"
