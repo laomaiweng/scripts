@@ -1,8 +1,5 @@
 #!/bin/bash
-
-
-# Build full name
-[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
+# genkernel-cobalt - kernel and initramfs generation script for Cobalt
 
 
 # Early functions
@@ -12,28 +9,31 @@ die() { # *:message
 } >&2
 
 
-# Environment variables
+# Early environment
 : "${KERNELDIR:=/usr/src/linux}"
 : "${KERNELENV:=$KERNELDIR/.gkenv}"
-: "${KERNELCONF:=$KERNELDIR/.config.cobalt}"
-: "${GRUBCFG:=/boot/grub/grub.cfg}"
-: "${EFIPART:=/boot/efi}"
-: "${EFIKERNEL:=/EFI/Boot/gentoo.efi}"
-: "${EFIOLDKERNEL:=$EFIKERNEL.old}"
-: "${EFILABEL:=Gentoo Linux}"
-: "${EFIVARFS:=efivarfs}"
-: "${PLYMOUTHDCONF:=/etc/plymouth/plymouthd.conf}"
-EMERGEOPTS=( $EMERGEOPTS )
-
 if [[ -f "$KERNELENV" ]]
 then
     source "$KERNELENV" || die "failed to source configuration variables from $KERNELENV"
 fi
 
+# Environment variables
+: "${KERNELNAME:=$(uname -n)}"
+KERNELVER="${KERNELVER#-}"
+: "${KERNELCONF:=$KERNELDIR/.config.$KERNELNAME${KERNELVER:+-$KERNELVER}}"
+: "${EFIPART:=/boot/efi}"
+: "${EFIKERNEL:=/EFI/Boot/gentoo-$KERNELNAME${KERNELVER:+-$KERNELVER}.efi}"
+: "${EFIOLDKERNEL:=$EFIKERNEL.old}"
+: "${EFILABEL:=Gentoo Linux${KERNELVER:+ ($KERNELVER)}}"
+: "${EFIVARFS:=efivarfs}"
+EMERGEOPTS=( $EMERGEOPTS )
+: "${GK_LOGLEVEL:=1}"
+
 # Global variables
 efipart_mounted=false
-splash_default_theme="$(sed -n -e 's/^Theme=\(.*\)$/\1/p' "$PLYMOUTHDCONF")"
-: "${splash_default_theme:=spinner}"
+
+red="\E[1;31m"
+black="\E[00m"
 
 
 # Functions
@@ -41,15 +41,18 @@ help() {
     cat <<-EOF
 	  Usage: ${0##*/} [options]
 	
-	Builds a kernel and its integrated initramfs with LUKS, LVM, and the
-	fr-bépo keymap, but without modules and HW detection logic.
-	Can also include boot splash with Plymouth, update Grub, sign (for Secure
-	Boot) and install the kernel to an EFI System partition, and \`emerge
-	@module-rebuild\` (and sign the modules).
+	Builds a kernel and its integrated initramfs for Cobalt.
+	Includes LUKS, BTRFS, the fr-bépo keymap, and optionally the nVidia drivers.
+	Can also sign (for Secure Boot), install the kernel to an EFI System
+	partition, and emerge (and sign) out-of-tree modules.
 	
 	The kernel is configured and built in \$KERNELDIR (default "/usr/src/linux"):
 	    ${KERNELDIR:-(empty)}
-	using configuration \$KERNELCONF (default "\$KERNELDIR/.config.cobalt"):
+	with name \$KERNELNAME (default "\$(uname -n)"):
+	    ${KERNELNAME:-(empty)}
+	and local version suffix \$KERNELVER (default ""):
+	    ${KERNELVER:-(empty)}
+	using configuration \$KERNELCONF (default "\$KERNELDIR/.config.\$KERNELNAME-\$KERNELVER"):
 	    ${KERNELCONF:-(empty)}
 	EOF
     if [[ "$1" == "full" ]]
@@ -57,53 +60,63 @@ help() {
         cat <<-EOF
 		The EFI System partition is mounted at \$EFIPART (default "/boot/efi"):
 		    ${EFIPART:-(empty)}
-		The EFI kernel path is \$EFIKERNEL (default "/EFI/Boot/gentoo.efi"):
+		The EFI kernel path is \$EFIKERNEL (default "/EFI/Boot/gentoo-\$KERNELNAME-\$KERNELVER.efi"):
 		    ${EFIKERNEL:-(empty)}
 		The EFI old kernel path is \$EFIOLDKERNEL (default "\$EFIKERNEL.old"):
 		    ${EFIOLDKERNEL:-(empty)}
-		The EFI boot label is \$EFILABEL (default "Gentoo Linux"):
+		The EFI boot label is \$EFILABEL (default "Gentoo Linux (\$KERNELVER)"):
 		    ${EFILABEL:-(empty)}
 		The EFI variables filesystem is \$EFIVARFS (default "efivarfs"):
-		    ${EFIVARFS:-efivarfs}
-		The Grub configuration file is \$GRUBCFG (default "/boot/grub/grub.cfg"):
-		    ${GRUBCFG:-(empty)}
-		The Plymouth configuration file is \$PLYMOUTHDCONF (default "/etc/plymouth/plymouthd.conf"):
-		    ${PLYMOUTHDCONF:-(empty)}
-		The Plymouth default theme is (from \$PLYMOUTHDCONF, default: "spinner"):
-		    $splash_default_theme
+		    ${EFIVARFS:-(empty)}
 		Emerge is called with additional options from \$EMERGEOPTS (default empty):
 		    ${EMERGEOPTS:-(empty)}
+		Genkernel is called with loglevel \$GK_LOGLEVEL (default 1):
+		    ${GK_LOGLEVEL:-(empty)}
 		EOF
     fi
 	cat <<-EOF
 	
-	Configuration variables are sourced from \$KERNELDIR/.gkenv if it exists.
+	If \$KERNELVER is not set, its value is set to the value of kernel configuration item CONFIG_LOCALVERSION.
+	
+	Configuration variables are sourced from \$KERNELENV (default "\$KERNELDIR/.gkenv") if it exists.
 	
 	Options:
-	    -n                          negate a following short option
-	    -e | --[no-]efi             update the EFI System partition
-	                                (default: enabled)
-	    -g | --[no-]grub            update Grub
-	                                (default: disabled)
-	    -k | --[no-]kernel          build the kernel itself
-	                                (default: enabled)
-	    -m | --[no-]modules         emerge @module-rebuild
-	                                (default: enabled)
-	    -s | --[no-]splash <theme>  include boot splash using Plymouth
-	                                (default: disabled, theme: from configuration)
-	    -h | --help [full]          display help
+	    -n                      negate a following short option
+	    -e | --[no-]efi         update the EFI System partition
+	                            (default: enabled)
+	    -k | --[no-]kernel      build the kernel itself
+	                            (default: enabled)
+	    -m | --[no-]modules     emerge @module-rebuild
+	                            (default: enabled)
+	    -N | --[no-]nvidia      include drivers from x11-drivers/nvidia-drivers
+	                            (default: disabled if CONFIG_DRM_NOUVEAU is set, enabled otherwise)
+	    -b | --[no-]backup      backup current EFI kernel to \$EFIOLDKERNEL
+	                            (default: enabled)
+	    -h | --help [full]      display help
 	EOF
     exit
 }
+
 require() {     # 1:command 2:reqby
-    command -v "$1" &>/dev/null || die "$1 is required for $2 but not available"
+    command -v "$1" &>/dev/null || die "$1 is required ${2:+for $2 }but not available"
 }
+
+require_package() { # 1:package 2:reqby *:useflags
+    local package="$1" reqby="$2"
+    shift 2
+    [[ -n "$(portageq best_version / "$package")" ]] || die "$package is required ${reqby:+for $reqby }but not available"
+    for use in "$@"; do
+        equery u "$package" | grep -q ^+"$use" || die "$package[$use] is required ${reqby:+for $reqby }but not available"
+    done
+}
+
 verbosedo() {   # 1:error_message *:command
-    err="$1"
+    local err="$1"
     shift
-    echo "  $*"
+    echo ">>> $*"
     "$@" || die "$err"
 }
+
 cleanup() {
     [[ "$efivarfs_access" == ro ]] && { mount -o remount,ro "$EFIVARFS" || echo "Error: failed to remount EFI variables filesystem $EFIVARFS read-only"; }
     $efipart_mounted && { umount "$EFIPART" || echo "Error: failed to unmount EFI System partition at $EFIPART"; }
@@ -121,22 +134,24 @@ then
     help "$@"
 fi
 
+# Check kernel config
+[[ -f "$KERNELCONF" ]] || die "missing configuration file: $KERNELCONF"
+
 # Check early requirements
 require getopt
 
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l help,efi,no-efi,grub,no-grub,kernel,no-kernel,modules,no-modules,splash:,no-splash -o +hnegkms -- "$@")" || exit 1
+getopt="$(getopt -n "${0##*/}" -l help,efi,no-efi,kernel,no-kernel,modules,no-modules,nvidia,no-nvidia,backup,no-backup -o +hnegkmNb -- "$@")" || exit 1
 eval set -- "$getopt"
 true=true       # trick for -n
 negate=false
 efi=true
-grub=false
 kernel=true
 modules=true
-splash=false
-splash_theme="$splash_default_theme"
+nvidia="$(grep -qxF 'CONFIG_DRM_NOUVEAU=y' "$KERNELCONF" && echo false || echo true)"
+backup=true
 while true
 do
     # Negate if previous option was -n, and reset negation
@@ -148,18 +163,18 @@ do
         -e) efi=$true ;;
         --efi) efi=true ;;
         --no-efi) efi=false ;;
-        -g) grub=$true ;;
-        --grub) grub=true ;;
-        --no-grub) grub=false ;;
         -k) kernel=$true ;;
         --kernel) kernel=true ;;
         --no-kernel) kernel=false ;;
         -m) modules=$true ;;
         --modules) modules=true ;;
         --no-modules) modules=false ;;
-        -s) splash=$true ;;
-        --splash) splash=true; [[ -n "$2" ]] && splash_theme="$2"; shift ;;
-        --no-splash) splash=false ;;
+        -N) nvidia=$true ;;
+        --nvidia) nvidia=true ;;
+        --no-nvidia) nvidia=false ;;
+        -b) backup=$true ;;
+        --backup) backup=true ;;
+        --no-backup) backup=false ;;
         --) shift ; break ;;
         *) die "getopt failure" ;;
     esac
@@ -177,10 +192,6 @@ then
     require genkernel --kernel
     require chgrp --kernel
 fi
-if $grub
-then
-    require grub2-mkconfig --grub
-fi
 if $efi
 then
     require mountpoint --efi
@@ -190,7 +201,7 @@ then
     require blkid --efi
     require efibootmgr --efi
     require tail --efi
-    require mv --efi
+    $backup && require mv --efi
     require cp --efi
     [[ "${EFIKERNEL:0:1}" == "/" ]] || die "\$EFIKERNEL must be an absolute path on the EFI System partition: $EFIKERNEL"
 fi
@@ -202,32 +213,24 @@ then
     require dd --modules
     require base64 --modules
 fi
-if $splash
+if $nvidia
 then
-    require plymouth-set-default-theme --splash
+    require_package x11-drivers/nvidia-drivers --nvidia driver kms
 fi
 
-# Check splash settings validity
-if $splash
-then
-    splash_valid=false
-    for t in $(plymouth-set-default-theme --list)   # bad
-    do
-        [[ "$splash_theme" == "$t" ]] && { splash_valid=true; break; }
-    done
-    $splash_valid || die "invalid splash theme: $splash_theme"
-    (( $# > 0 )) && die "unhandled arguments: ${*@Q}"
-else
-    splash=         # if false, ${splash:+blah} must expand to null
-fi
 
+# Detect kernel local version
+localver="$(sed -n -e 's/^CONFIG_LOCALVERSION="-\?\(.*\)"$/\1/p' "$KERNELCONF")" || die "failed to read kernel local version from configuration file: $KERNELCONF"
+: "${KERNELVER:=$localver}"
+[[ "$KERNELVER" == "$localver" ]] || die "kernel local version mismatch: KERNELVER=\"$KERNELVER\" but CONFIG_LOCALVERSION=\"$localver\""
 
 # Build directory
-builddir="$KERNELDIR/build"
+namever="$KERNELNAME${KERNELVER:+-$KERNELVER}"
+builddir="$KERNELDIR/build-$namever"
 
 
 
-## Build the kernel
+## First kernel pass: build the kernel itself
 if $kernel
 then
     # Ok, let's get paranoid about permissions now. The kernel build below will generate the kernel's signing key for modules, and we don't want these to be world-readable -- or even portage-readable.
@@ -241,22 +244,18 @@ then
     # Create the build directory as genkernel fails without it
     mkdir -p "$builddir" || die "build directory creation failed"
 
-    # Build the kernel, with genkernel from sys-kernel/genkernel-next:
+    # Build the kernel, with genkernel from sys-kernel/genkernel:
+    # * display what's going on (--loglevel)
+    # * don't install yet, we need to embed the initramfs (--no-install)
     # * save the config in /etc/kernels (--save-config)
     # * assume the config is fine (--no-oldconfig)
-    # * clean up, but not too much (--no-mrproper --clean)
-    # * don't mount /boot, the real boot filesystem is on /boot/efi (--no-mountboot)
-    # * install on /boot and symlink it (--install --symlink)
+    # * clean up everything (--mrproper --clean)
     # * kernel directory and configuration from the environment (--kerneldir --kernel-config)
     # * separate kernel build directory (--kernel-outputdir)
     # * custom kernel name (--kernname)
     # * build fast (--makeopts)
-    # * set the keymap on boot from the kernel command line (--keymap)
-    # * fancyness (--plymouth --plymouth-theme)
-    # * don't include modules and firmware in the initramfs, it's a custom kernel with all required components built in (--no-ramdisk-modules --no-all-ramdisk-modules --no-firmware)
-    # * initramfs components (--busybox --udev --luks --lvm --no-mdadm --no-dmraid)
-    # * don't compress the initramfs, but embed it into the kernel (--no-compress-initramfs --integrated-initramfs)
-    genkernel --save-config --no-oldconfig --no-mrproper --clean --no-mountboot --install --symlink --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="cobalt" --makeopts="-j8 -l9" --keymap ${splash:+--plymouth --plymouth-theme="$splash_theme"} --no-ramdisk-modules --no-all-ramdisk-modules --no-firmware --busybox --udev --luks --lvm --no-mdadm --no-dmraid --no-compress-initramfs --integrated-initramfs all || die "kernel build failed"
+    # * initramfs components (--keymap --busybox --luks --btrfs), still passed to stage 1 for kernel config checks
+    genkernel ${GK_LOGLEVEL:+--loglevel="$GK_LOGLEVEL"} --no-install --save-config --no-oldconfig --mrproper --clean --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="$KERNELNAME" --makeopts="-j8 -l9" --keymap --busybox --luks --btrfs kernel || die "kernel build failed"
 
     # Fine, now let's loosen the restrictions a bit so that portage can still build external modules -- but keep the keys locked
     echo
@@ -268,23 +267,78 @@ then
     verbosedo "kernel unlock failed" umask "$umask"
 fi
 
+
 # Get the version number
 kernelversionfile="$builddir/include/config/kernel.release"
 kernelversion="$(<"$kernelversionfile")" 2>/dev/null || die "read kernel version from $kernelversionfile failed"
+kernelfile="/boot/kernel-$KERNELNAME-$(uname -m)-$kernelversion"
 
 
-## Update Grub
-if $grub
+## Build external modules (before building the initramfs, because we may want to include some)
+if $modules
 then
     echo
     echo
-    if [[ -f "$GRUBCFG" ]]
-    then
-        grub2-mkconfig -o "$GRUBCFG" || die "GRUB configuration failed"
-    else
-        echo "Warning: cannot update Grub: '$GRUBCFG' not found" >&2
-    fi
+    # Find out whether we're building a PaX kernel and adjust USE flags accordingly
+    export USE=-pax_kernel
+    grep -q '^CONFIG_PAX=y$' "$KERNELCONF" && USE=pax_kernel
+    # Don't build the nVidia drivers if building a Nouveau kernel
+    excludes=()
+    $nvidia || excludes+=(--exclude x11-drivers/nvidia-drivers)
+    # Emerge external modules
+    # (the linux-mod/linux-info eclasses need KERNEL_DIR/KBUILD_OUTPUT to use the right kernel and build directory)
+    KERNEL_DIR="$KERNELDIR" KBUILD_OUTPUT="$builddir" verbosedo "module rebuild failed" emerge --quiet-build y --keep-going "${excludes[@]}" "${EMERGEOPTS[@]}" @module-rebuild || die "emerge modules failed"
+
+    # Sign the modules
+    echo
+    echo
+    echo "Signing modules:"
+    sigtext="~Module signature appended~"
+    count=0
+    for module in $(equery f $(equery b "/lib/modules/$kernelversion") | grep '^/lib/modules/'"${kernelversion//./\\.}"'/.*\.ko$')
+    do
+        (( count++ ))
+        echo -n "$module "
+        # Look for "~Module signature appended~" at the end of the file
+        # (use `base64` to prevent Bash from choking on null bytes)
+        if [[ "$(dd if="$module" iflag=skip_bytes skip="$(($(stat -c %s "$module") - ${#sigtext} - 1))" status=none | base64)" == "$(base64 <<<"$sigtext")" ]]
+        then
+            echo "ALREADY SIGNED"
+        else
+            "$builddir/scripts/sign-file" sha512 "$builddir/certs/signing_key.pem" "$builddir/certs/signing_key.x509" "$module" && echo OK || echo FAIL
+        fi
+    done
+    echo "$count modules signed."
 fi
+
+
+## Second kernel pass: build the initramfs and integrate it into the kernel
+if $kernel
+then
+    echo
+    echo
+    # Neutralize existing genkernel module groups, the kernel already has what it needs
+    # (we're only using --ramdisk-modules for custom modules genkernel doesn't handle natively)
+    for group in $(sed -n -e 's/^\(MODULES_[^=]*\)=.*/\1/p' /usr/share/genkernel/defaults/modules_load); do
+        export "$group"=    # can still override this with AMODULES_$group
+    done
+    if $nvidia
+    then
+        # Define a new module group for genkernel to include
+        export AMODULES_NVIDIA="nvidia-drm nvidia-modeset nvidia-uvm nvidia"
+    fi
+
+    # Build the initramfs (see invocation above for common arguments):
+    # * don't mount /boot, the real boot filesystem is on /boot/efi (--no-mountboot)
+    # * install to /boot and symlink it if backup is enabled (--install --[no-]symlink)
+    # * include only necessary modules in the initramfs, but no firmware, it's a custom kernel with most required components built in (--ramdisk-modules --no-all-ramdisk-modules --no-firmware)
+    # * don't compress the initramfs, but embed it into the kernel (--no-compress-initramfs --integrated-initramfs)
+    genkernel ${GK_LOGLEVEL:+--loglevel="$GK_LOGLEVEL"} --no-mountboot --install $($backup && printf -- --symlink || printf -- --no-symlink) --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="$KERNELNAME" --makeopts="-j8 -l9" --ramdisk-modules --no-all-ramdisk-modules --no-firmware --keymap --busybox --luks --btrfs --no-compress-initramfs --integrated-initramfs initramfs || die "kernel build failed"
+fi
+
+
+# Get the embedded command line
+kernelcmdline="$(sed -n -e 's/^CONFIG_CMDLINE="\(.*\)"$/\1/p' "$builddir/.config")"
 
 
 ## Install to EFI
@@ -293,6 +347,7 @@ then
     echo
 
     # Get information on the EFI system partition
+    # Remember: partition number != minor number
     if ! mountpoint -q "$EFIPART"
     then
         mount "$EFIPART" || die "failed to mount EFI System partition at $EFIPART"
@@ -300,10 +355,14 @@ then
         echo "Mounted EFI System partition: $EFIPART"
     fi
     efinode="$(mountpoint -d "$EFIPART")" || die "failed to mount EFI System partition at $EFIPART"
-    IFS=: read -r efimajor efiminor <<<"$efinode" || die "can't get EFI System partition major/minor numbers"
+    IFS=: read -r efimajor efiminor <<<"$efinode" || die "failed to get EFI System partition major/minor numbers"
     [[ -d /sys/dev/block/"$efinode" ]] || die "EFI System partition is not a block device"
     efidisk=/dev/"$(sed -n -e 's/^DEVNAME=//p' /sys/dev/block/"$efimajor":0/uevent)"
-    efiuuid="$(blkid -s PARTUUID -o value "${efidisk}${efiminor}")"
+    efidiskpart=/dev/"$(sed -n -e 's/^DEVNAME=//p' /sys/dev/block/"$efinode"/uevent)"
+    efidiskpartno="${efidiskpart#$efidisk}"     # try to derive part number from part device
+    efidiskpartno="${efidiskpartno#p}"          # some devices (e.g., NVMe devices) have a 'p' before the part number
+    efiuuid="$(blkid -s PARTUUID -o value "$efidiskpart")"
+    [[ -n "$efiuuid" ]] || die "failed to get EFI System partition PARTUUID" 
     efipath="${EFIPART}${EFIKERNEL}"
     [[ -n "$EFIOLDKERNEL" ]] && efioldpath="${EFIPART}${EFIOLDKERNEL}"
 
@@ -336,13 +395,17 @@ then
     do
         # Check UUID and path
         IFS=, read -r dummy dummy uuid dummy dummy <<<"$hd"
-        [[ "$uuid" == "$efiuuid" ]] || continue
-        [[ "$file" == "${EFIKERNEL//\//\\}" ]] || continue
-        echo "  * ${bootnum}${active#a:}: \"$label\" HD($hd)/File($file)"
-        # Check label
-        [[ "$label" == "$EFILABEL" ]] || { badlabel+=("$bootnum"); continue; }
-        # Check active
-        [[ "$active" == "a:*" ]] && valid+=("$bootnum") || inactive+=("$bootnum")
+        if [[ "$uuid" == "$efiuuid" ]]; then
+            [[ "$file" == "${EFIKERNEL//\//\\}" ]] || continue
+            echo "  * ${bootnum}${active#a:}: \"$label\" HD($hd)/File($file)"
+            # Check label
+            [[ "$label" == "$EFILABEL" ]] || { badlabel+=("$bootnum"); continue; }
+            # Check active
+            [[ "$active" == "a:*" ]] && valid+=("$bootnum") || inactive+=("$bootnum")
+        else
+            # Bad UUID, but let's still check the label
+            [[ "$label" == "$EFILABEL" ]] && echo "Warning: found EFI boot entry $bootnum with matching label but different partition!" >&2
+        fi
     done <<<"$(efibootmgr -v | sed -n -e "$regex")"
     if (( ${#valid[*]} > 1 ))
     then
@@ -365,7 +428,8 @@ then
     else
         # Fine, let's do this
         echo "Warning: no matching EFI boot entry, creating one" >&2
-        entries="$(efibootmgr -v --create --disk "$efidisk" --part "$efiminor" --loader "${EFIKERNEL//\//\\}" --label "$EFILABEL")" || die "create EFI boot entry failed"
+        echo ">>> efibootmgr -v --create --disk $efidisk --part $efidiskpartno --loader ${EFIKERNEL//\//\\} --label $EFILABEL"
+        entries="$(efibootmgr -v --create --disk "$efidisk" --part "$efidiskpartno" --loader "${EFIKERNEL//\//\\}" --label "$EFILABEL")" || die "create EFI boot entry failed"
         read -r bootnum active hd file label <<<"$(tail -n1 <<<"$entries" | sed -n -e "$regex")"
         echo "  * ${bootnum}${active#a:}: \"$label\" HD($hd)/File($file)"
     fi
@@ -373,18 +437,21 @@ then
     # Install the new kernel to the EFI System partition
     echo
     echo "Installing kernel to EFI System partition:"
-    if [[ -n "$efioldpath" ]]
+    if $backup
     then
-        if [[ -f "$efipath" ]]
+        if [[ -n "$efioldpath" ]]
         then
-            verbosedo "backup current EFI kernel failed" mv -fT "$efipath" "$efioldpath"
+            if [[ -f "$efipath" ]]
+            then
+                verbosedo "backup current EFI kernel failed" mv -fT "$efipath" "$efioldpath"
+            else
+                skipmsg="Skipped backup of $efipath: no previous kernel at $efipath"
+            fi
         else
-            skipmsg="Skipped backup of $efipath: no previous kernel at $efipath"
+            skipmsg="Skipped backup of $efipath: empty \$EFIOLDKERNEL"
         fi
-    else
-        skipmsg="Skipped backup of $efipath: empty \$EFIOLDKERNEL"
     fi
-    verbosedo "install new EFI kernel failed" cp -fLT "/boot/kernel-$(uname -n)-$(uname -m)-$kernelversion" "$efipath"
+    verbosedo "install new EFI kernel failed" cp -fLT "$kernelfile" "$efipath"
     [[ -n "$skipmsg" ]] && echo "$skipmsg"
 
     # Restore access mode for the EFI variables filesystem
@@ -407,39 +474,9 @@ then
     fi
 fi
 
-
-## Build external modules
-if $modules
-then
-    # Emerge external modules
-    echo
-    echo
-    # Find out whether we're building a PaX kernel and adjust USE flags accordingly
-    export USE=-pax_kernel
-    grep -q '^CONFIG_PAX=y$' "$KERNELCONF" && USE=pax_kernel
-    # The linux-mod/linux-info eclasses need KERNEL_DIR/KBUILD_OUTPUT to use the right kernel and build directory
-    KERNEL_DIR="$KERNELDIR" KBUILD_OUTPUT="$builddir" emerge --quiet-build y --keep-going "${EMERGEOPTS[@]}" @module-rebuild || die "emerge modules failed"
-
-    # Sign the modules
-    echo
-    echo
-    echo "Signing modules:"
-    sigtext="~Module signature appended~"
-    count=0
-    for module in $(equery f $(equery b "/lib/modules/$kernelversion") | grep '^/lib/modules/'"${kernelversion//./\\.}"'/.*\.ko$')
-    do
-        (( count++ ))
-        echo -n "$module "
-        # Look for "~Module signature appended~" at the end of the file
-        # (use `base64` to prevent Bash from choking on null bytes)
-        if [[ "$(dd if="$module" iflag=skip_bytes skip="$(($(stat -c %s "$module") - ${#sigtext} - 1))" status=none | base64)" == "$(base64 <<<"$sigtext")" ]]
-        then
-            echo "ALREADY SIGNED"
-        else
-            "$builddir/scripts/sign-file" sha512 "$builddir/certs/signing_key.pem" "$builddir/certs/signing_key.x509" "$module" && echo OK || echo FAIL
-        fi
-    done
-    echo "$count modules signed."
-fi
-
+echo
+printf "New kernel built/installed successfully: ${red}$kernelfile${black}\n"
+printf "Kernel command line: ${red}$kernelcmdline${black}\n"
+! $nvidia && grep -qF donvidia <<<"$kernelcmdline" && echo "Warning: nVidia modules disabled, but there is a 'donvidia' parameter on the kernel command line" >&2
+$nvidia && ! grep -qF donvidia <<<"$kernelcmdline" && echo "Warning: nVidia modules enabled, but there is no 'donvidia' parameter on the kernel command line" >&2
 echo
