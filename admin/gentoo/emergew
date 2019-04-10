@@ -12,21 +12,18 @@ die() { # *:message
 
 
 # Tmpfs-related variables
-[[ -z "$PORTAGE_TMPDIR" ]] && PORTAGE_TMPDIR="$(
-    # PORTAGE_TMPDIR unset: source Portage config in a subshell so as not to pollute the environment with Portage variables
-    . /etc/portage/make.conf
-    echo "$PORTAGE_TMPDIR"
-)"
-: "${PORTAGE_TMPDIR:=/var/tmp/portage}"
+: "${PORTAGE_TMPDIR:=$(portageq envvar PORTAGE_TMPDIR)/portage}" || die "portageq failed to get PORTAGE_TMPDIR"
 : "${PORTAGE_TMPDIR_SIZE:=9G}"
 
 # Kernel-related variables
 export KERNEL_DIR
-: "${KERNEL_DIR:=/usr/src/linux-$(uname -r)}" || die '`uname -r` failed, please export KERNEL_DIR explicitly'
+: "${KERNEL_DIR:=/usr/src/linux-$(uname -r)}" || die 'uname failed, please export KERNEL_DIR explicitly'
+[[ -d "$KERNEL_DIR" ]] || die "no such directory: KERNEL_DIR: $KERNEL_DIR"
 export KBUILD_OUTPUT
 : "${KBUILD_OUTPUT:=$KERNEL_DIR/build}"
-export USE=-pax_kernel
-zgrep -q '^CONFIG_PAX=y$' /proc/config.gz && USE=pax_kernel
+[[ -d "$KBUILD_OUTPUT" ]] || die "no such directory: KBUILD_OUTPUT: $KBUILD_OUTPUT"
+export USE="$USE -pax_kernel"
+zgrep -q '^CONFIG_PAX=y$' /proc/config.gz && USE="$USE pax_kernel"
 
 # Print help
 if [[ "$1" =~ ^(-h|--help)$ ]]

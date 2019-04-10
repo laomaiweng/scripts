@@ -27,9 +27,8 @@ hnewsize="$(findmnt -rnu -o SIZE "$tmpmount")" || die "dummy human size findmnt 
 umount "$tmpmount" || die "dummy umount failed"
 rmdir "$tmpmount" || die "dummy rmdir failed"
 
-# PORTAGE_TMPDIR unset: source Portage config or default to /var/tmp/portage
-[[ -z "$PORTAGE_TMPDIR" ]] && { . /etc/portage/make.conf || die "can't source /etc/portage/make.conf" ; }
-: "${PORTAGE_TMPDIR:=/var/tmp/portage}"
+# Fetch PORTAGE_TMPDIR
+: "${PORTAGE_TMPDIR:=$(portageq envvar PORTAGE_TMPDIR)/portage}" || die "portageq failed to get PORTAGE_TMPDIR"
 
 # Mount options
 opts=(size="$size" mode=775 uid=root gid=portage)
