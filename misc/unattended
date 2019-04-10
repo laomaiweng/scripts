@@ -1,6 +1,6 @@
 #!/bin/bash
 
-polling_period=60s
+: "${POLLING_PERIOD:=60s}"
 
 die() {
     printf -- "Error: %s" "$*"
@@ -17,6 +17,11 @@ then
 	  Usage: ${0##*/} <pid> <script>
 	
 	Run a script after a PID terminates.
+	
+	unattended regularly polls the system to check whether the target PID
+	has terminated. This is inacurrate as the PID might get terminated and
+	reused between polls. The polling period may be adjusted through the
+	POLLING_PERIOD environment variable (default 60s).
 	EOF
     exit 0
 fi
@@ -28,7 +33,7 @@ script="$2"
 [[ "$script" != "-" && ! -x "$script" ]] && die "script is not executable"
 
 # Wait for the PID to terminate
-while [[ -d "/proc/$pid" ]]; do sleep "$polling_period"; done
+while [[ -d "/proc/$pid" ]]; do sleep "$POLLING_PERIOD"; done
 
 # Dump the script to a file if from stdin
 if [[ "$script" == "-" ]]
