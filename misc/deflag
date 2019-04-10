@@ -1,0 +1,42 @@
+#!/bin/bash
+# deflag - a command line argument stripper
+#
+# deflag just strips "bad" options in its command line arguments, before
+# passing them on to some underlying program. E.g., this allows one to have
+# clang-specific flags in CFLAGS without gcc choking on them.
+# The program to invoke is taken from the basename of whatever `deflag` is
+# invoked as: `deflag-gcc` for `gcc`, ...
+# The flags to strip must be defined in environment variable DEFLAG_<program>.
+
+# Get the program
+program="${0##*/}"
+program="${program#deflag-}"
+if [[ "$program" == deflag ]]; then
+    if (( $# < 1 )) || [[ "$1" =~ ^(-h|--help)$ ]]; then
+        cat <<-"EOF"
+		Usage: DEFLAG_<program>="--args --to --strip" deflag <program> [args] ...
+		
+		Invoke <program> while stripping from its arguments anything that's in DEFLAG_<program>.
+		May also be called through a symlink to `deflag`, named `deflag-<program>` or just `<program>`.
+		
+		(Any characters in <program> that are illegal in a shell variable name will be replaced by _.)
+		EOF
+        exit 1
+    fi
+
+    program="$1"
+    shift
+fi
+badvar="DEFLAG_$(printf %s "$program" | tr -C A-Za-z0-9_ _)"    # use `printf |` instead of <<< since <<< appends a newline
+
+# Filter args
+good=()
+for f; do
+    for bad in ${!badvar}; do
+        [[ "$f" != "$bad" ]] || continue 2
+    done
+    good+=("$f")
+done
+
+# Invoke
+"$program" "${good[@]}"
