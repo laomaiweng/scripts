@@ -12,16 +12,27 @@ die() { # *:message
 
 
 # Tmpfs-related variables
-: "${PORTAGE_TMPDIR:=$(portageq envvar PORTAGE_TMPDIR)/portage}" || die "portageq failed to get PORTAGE_TMPDIR"
+if [[ ! -v PORTAGE_TMPDIR || -n "$PORTAGE_TMPDIR" ]]
+then
+    [[ -v PORTAGE_TMPDIR ]] || PORTAGE_TMPDIR="$(portageq envvar PORTAGE_TMPDIR)/portage" || die "portageq failed to get PORTAGE_TMPDIR"
+    [[ -d "$PORTAGE_TMPDIR" ]] || die "no such directory: PORTAGE_TMPDIR: $PORTAGE_TMPDIR"
+fi
 : "${PORTAGE_TMPDIR_SIZE:=9G}"
 
 # Kernel-related variables
+kernelver="$(uname -r)" || die 'uname failed, perhaps export KERNEL_DIR and KBUILD_OUTPUT explicitly?'
+if [[ ! -v KERNEL_DIR || -n "$KERNEL_DIR" ]]
+then
+    [[ -v KERNEL_DIR ]] || KERNEL_DIR="$(readlink "/lib/modules/$kernelver/source")" || die 'readlink failed to read source directory symlink from /lib/modules, perhaps export KERNEL_DIR explicitly?'
+    [[ -d "$KERNEL_DIR" ]] || die "no such directory: KERNEL_DIR: $KERNEL_DIR"
+fi
 export KERNEL_DIR
-: "${KERNEL_DIR:=/usr/src/linux-$(uname -r)}" || die 'uname failed, please export KERNEL_DIR explicitly'
-[[ -d "$KERNEL_DIR" ]] || die "no such directory: KERNEL_DIR: $KERNEL_DIR"
+if [[ ! -v KBUILD_OUTPUT || -n "$KBUILD_OUTPUT" ]]
+then
+    [[ -v KBUILD_OUTPUT ]] || KBUILD_OUTPUT="$(readlink "/lib/modules/$kernelver/build")" || die 'readlink failed to read build directory symlink from /lib/modules, perhaps export KBUILD_OUTPUT explicitly?'
+    [[ -d "$KBUILD_OUTPUT" ]] || die "no such directory: KBUILD_OUTPUT: $KBUILD_OUTPUT"
+fi
 export KBUILD_OUTPUT
-: "${KBUILD_OUTPUT:=$KERNEL_DIR/build}"
-[[ -d "$KBUILD_OUTPUT" ]] || die "no such directory: KBUILD_OUTPUT: $KBUILD_OUTPUT"
 export USE="$USE -pax_kernel"
 zgrep -q '^CONFIG_PAX=y$' /proc/config.gz && USE="$USE pax_kernel"
 
@@ -73,10 +84,13 @@ cleanup() {
 
 
 # Mount PORTAGE_TMPDIR as tmpfs and sit in there to prevent others from unmounting it beneath us
-"${0%/*}"/emerge-tmpfs "${PORTAGE_TMPDIR_SIZE:-9G}"
-trap -- cleanup EXIT
-cd "$PORTAGE_TMPDIR" || die "can't cd to $PORTAGE_TMPDIR"
-echo
+if [[ -n "$PORTAGE_TMPDIR" ]]
+then
+    "${0%/*}"/emerge-tmpfs "${PORTAGE_TMPDIR_SIZE:-9G}" || die "emerge-tmpfs failed to mount tmpfs on $PORTAGE_TMPDIR"
+    trap -- cleanup EXIT
+    cd "$PORTAGE_TMPDIR" || die "can't cd to $PORTAGE_TMPDIR"
+    echo
+fi
 
 # Emerge!
 case "$1" in

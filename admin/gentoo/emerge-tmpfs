@@ -16,8 +16,15 @@ function die() {
     exit 1
 } >&2
 
+# Bail out early if directory is explicitly set to empty
+[[ -v PORTAGE_TMPDIR && -z "$PORTAGE_TMPDIR" ]] && { echo "No Portage temporary directory set, skipping mount/remount."; exit 0; }
+
+# Fetch args
 size="$1"
 label="${2:-emerge}"
+
+# Fetch PORTAGE_TMPDIR if unset
+[[ -v PORTAGE_TMPDIR ]] || PORTAGE_TMPDIR="$(portageq envvar PORTAGE_TMPDIR)/portage" || die "portageq failed to get PORTAGE_TMPDIR"
 
 # Tentative mount to let `mount' parse the tmpfs size
 tmpmount="$(mktemp -d)" || die "dummy mktemp failed"
@@ -26,9 +33,6 @@ newsize="$(findmnt -rnbu -o SIZE "$tmpmount")" || die "dummy size findmnt failed
 hnewsize="$(findmnt -rnu -o SIZE "$tmpmount")" || die "dummy human size findmnt failed"
 umount "$tmpmount" || die "dummy umount failed"
 rmdir "$tmpmount" || die "dummy rmdir failed"
-
-# Fetch PORTAGE_TMPDIR
-: "${PORTAGE_TMPDIR:=$(portageq envvar PORTAGE_TMPDIR)/portage}" || die "portageq failed to get PORTAGE_TMPDIR"
 
 # Mount options
 opts=(size="$size" mode=775 uid=root gid=portage)
