@@ -12,7 +12,7 @@ die() { # *:message
 
 
 # Tmpfs-related variables
-if [[ ! -v PORTAGE_TMPDIR || -n "$PORTAGE_TMPDIR" ]]
+if [[ ! -v NO_EMERGE_TMPFS ]]
 then
     [[ -v PORTAGE_TMPDIR ]] || PORTAGE_TMPDIR="$(portageq envvar PORTAGE_TMPDIR)/portage" || die "portageq failed to get PORTAGE_TMPDIR"
     [[ -d "$PORTAGE_TMPDIR" ]] || die "no such directory: PORTAGE_TMPDIR: $PORTAGE_TMPDIR"
@@ -59,6 +59,7 @@ then
 	  USE="$USE"
 	
 	Tmpfs-related variables:
+	  NO_EMERGE_TMPFS is ${NO_EMERGE_TMPFS-not }set
 	  PORTAGE_TMPDIR="$PORTAGE_TMPDIR"
 	  PORTAGE_TMPDIR_SIZE="$PORTAGE_TMPDIR_SIZE"
 	
