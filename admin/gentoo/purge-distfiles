@@ -2,9 +2,6 @@
 # Cleanup script for Portage distfiles
 
 
-# Build full name
-[[ "${0:0:1}" == "/" ]] && FULL_0="$0" || FULL_0="$PWD/$0"
-
 # Functions
 die() { # *:message
     printf "Error: %s\n" "$*"
@@ -12,35 +9,30 @@ die() { # *:message
 } >&2
 
 # Help message
-if [[ "$1" == "-h" || "$1" == "--help" ]]
-then
-    echo "Usage: ${0##*/}
-
-Remove all files (except hidden ones) in the directory specified by the DISTDIR
-environment variable. If unset, it is sourced from Portage's make.conf. If
-still unset, it defaults to /usr/portage/distfiles." >&2
+if [[ "$1" =~ ^(-h|--help)$ ]]; then
+    cat >&2 <<-EOF
+	Usage: ${0##*/}
+	
+	Remove all files (except hidden ones) in the directory specified by the DISTDIR
+	environment variable. If unset, it is sourced from Portage's make.conf. If
+	still unset, it defaults to /usr/portage/distfiles.
+	EOF
     exit
 fi
 
-# DISTDIR unset: source Portage config or default to /usr/portage/distfiles
-[[ -z "$DISTDIR" ]] && . /etc/portage/make.conf
-[[ -z "$DISTDIR" ]] && DISTDIR=/usr/portage/distfiles
-
-# Check that the directory exists
-[[ ! -d "$DISTDIR" ]] && die "directory $DISTDIR does not exist"
+# Fetch DISTDIR if unset
+[[ -v DISTDIR ]] || DISTDIR="$(portageq envvar DISTDIR)" || die "portageq failed to get DISTDIR"
+[[ ! -d "$DISTDIR" ]] && die "no such directory: $DISTDIR"
 
 # Get the size of the directory contents (except dotfiles)
-SIZE=$(du -sch "$DISTDIR"/* 2> /dev/null)
-STATUS=$?
-SIZE=$(echo "$SIZE" | tail -n 1 | cut -f1)
-if [[ $STATUS != 0 ]]
-then
-    [[ $SIZE == 0 ]] && { echo "Directory $DISTDIR is empty."; exit 0; }
+set -o pipefail
+size="$(du -sch "$DISTDIR"/* 2>/dev/null | tail -n1 | cut -f1)"
+if (( $? != 0 )); then
+    (( $size == 0 )) && { echo "Directory $DISTDIR is empty."; exit 0; }
     die "failed to stat contents of $DISTDIR"
 fi
 
 # Confirm then delete everything (except dotfiles) in the distfiles directory
-echo -n "Purge $DISTDIR? ($SIZE) [y/N] "
-declare -u ANS
-read ANS
-[[ "$ANS" == "Y" ]] && rm -Rf "$DISTDIR"/*
+echo -n "Purge $DISTDIR? ($size) [y/N] "
+read -r ans
+[[ "${ans,,}" == "y" ]] && rm -rf -- "$DISTDIR"/*
