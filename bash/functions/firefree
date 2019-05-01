@@ -1,0 +1,83 @@
+#!/bin/bash
+# firefree - temporary firejail bypass
+
+#TODO: set exit trap to cleanup directory on shell exit!
+
+function firefree() {
+    if (( $# == 0 )) || [[ "$1" =~ ^(help|-h|--help)$ ]]; then
+        cat <<-EOF
+		Usage: firefree <action> [args]
+		
+		Temporary firejail bypasses.
+		
+		Actions:
+		  <program> [args]      run a program without firejail
+		  free <program>        disable firejail for a program
+		  jail <program>        (re-)enable firejail for a program
+		  liberate              disable firejail entirely
+		  incarcerate           (re-)enable firejail entirely
+		EOF
+        return
+    fi
+
+    function __firefree_error() { printf -- "Error: %s\n" "$*"; } >&2
+    function __firefree_warn() { printf -- "Warning: %s\n" "$*"; } >&2
+
+    local firejail_path="${FIREJAILPATH-/usr/local/firejail}"
+    local firefree_path="${FIREFREEPATH-${TMPDIR:-/tmp}/firefree-$$}"
+    local firejail_bin="$(command -v firejail)"
+
+    [[ ! -v container ]] || { __firefree_error "already firejailed"; exit 1; }
+    [[ -x "$firejail_bin" ]] || { __firefree_error "firejail not found or not executable"; exit 1; }
+    [[ "$(type -t path)" == function ]] || { __firefree_error "Bash function 'path' not available"; exit 1; }
+
+    local action="$1"
+
+    case "$action" in
+        free)
+            local program="$2"
+            [[ -n "$program" ]] || { __firefree_error "missing argument"; exit 1; }
+            if ! [[ -d "$firefree_path" ]]; then
+                # Setup firefree temporary PATH directory
+                mkdir -p "$firefree_path" || { __firefree_error "failed to create firefree temporary PATH"; exit 1; }
+                for f in "$firejail_path"/*; do
+                    if [[ "$(readlink "$f")" == "$firejail_bin" ]]; then
+                        [[ "${f##*/}" == "$program" ]] || ln -s "$firejail_bin" "$firefree_path/${f##*/}" || __firefree_warn "failed to create firejail symlink for ${f##*/} in firefree temporary PATH"
+                    else
+                        ln -s "$f" "$firefree_path" || __firefree_warn "failed to create symlink for non-firejail binary ${f##*/} in firefree temporary PATH"
+                    fi
+                done
+            else
+                # Clear symlink for program from firefree temporary PATH directory
+                [[ "$(readlink "$firefree_path/$program")" == "$firejail_bin" ]] || { __firefree_error "no firejail symlink for: $program"; exit 1; }   #TODO: distinguish between no symlink (= already free) / not a symlink
+                rm -- "$firefree_path/$program" || { __firefree_error "failed to remove firejail symlink for: $program"; exit 1; }
+            fi
+            # Ensure firefree temporary PATH directory is in (front of) the PATH, remove firejail PATH directory from the PATH
+            path prepend -e bin "$firefree_path" || { __firefree_error "failed to add firefree temporary PATH"; exit 1; }
+            path strip bin "$firejail_path" || { __firefree_error "failed to remove firejail PATH"; exit 1; }
+            ;;
+
+        jail)
+            __firefree_error "NOT IMPLEMENTED"; exit 1
+            ;;
+
+        liberate)
+            #TODO: create $firefree_path if needed, empty it from all symlinks to $firejail_bin
+            __firefree_error "NOT IMPLEMENTED"; exit 1
+            ;;
+
+        incarcerate)
+            __firefree_error "NOT IMPLEMENTED"; exit 1
+            ;;
+
+        *)
+            local program="$action"
+            [[ -n "$program" ]] || { __firefree_error "missing argument"; exit 1; }
+            # Strip firejail/firefree PATH directories from the PATH, in a subshell
+            (
+                path strip bin "$firejail_path" "$firefree_path" || { __firefree_error "failed to remove firejail/firefree PATH directories"; exit 1; }
+                "$@"
+            )
+            ;;
+    esac
+}
