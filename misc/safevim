@@ -1,0 +1,5 @@
+#!/bin/sh
+# NOTE: the user may still be able to load plugin through command-line args or vim commands
+#       the goal of this script is not to protect from a malicious user, but from malicious plugins
+#       best used with firejail
+exec vim --noplugin "$@"
