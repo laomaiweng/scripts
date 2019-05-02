@@ -29,10 +29,11 @@ function path() {
 		
 		Generic options:
 		  -e|--export     export the environment variable
-		  -f|--force      stop complaining about variable
-		                  names not ending in PATH
-		  -n|--nocolor    don't colorize output
+		  -f|--force      stop complaining about variable names not ending in PATH
+		  -n|--dry-run    don't actually alter the environment variable
+		                  (most useful with -v)
 		  -v|--verbose    print the resulting path
+		  -C|--nocolor    don't colorize output
 		
 		Specific options for action 'show':
 		  -r|--reset      forget non-default variables
@@ -85,6 +86,7 @@ function path() {
     # Parse options
     local export=0
     local force=0
+    local dryrun=0
     local glob=0
     local reset=0
     local verbose=0
@@ -140,12 +142,16 @@ function path() {
                 force=1
                 ;;
 
+            n|dry-run)
+                dryrun=1
+                ;;
+
             g|glob)
                 glob=1
                 [[ "$selected_action" != "strip" ]] && { echo "Error: invalid option '$option' for action '$selected_action'!" >&2 ; return 1 ; }
                 ;;
 
-            n|nocolor)
+            C|nocolor)
                 black=
                 green=
                 ;;
@@ -233,6 +239,16 @@ function path() {
     fi
     shift
 
+    # If dry-running, render all path modifications local
+    if (( $dryrun ))
+    then
+        local t
+        for t in "${targets[@]}"
+        do
+            eval local $t="\${!t}"
+        done
+    fi
+
     # Process actions
     local a
     for a in "${actions[@]}"
@@ -317,8 +333,7 @@ function path() {
         local t
         for t in "${targets[@]}"
         do
-            echo -e "${green}$t =${black} ${!t}"
+            echo -e "${green}$t = ${black}${!t}"
         done
     fi
 }
-
