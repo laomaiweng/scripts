@@ -35,18 +35,34 @@ function ssh-agent-respawn() {
 
     local ssh_agent_envfile="$1"
 
-    # Kill all existing agents for the current user
-    # (SSH_AGENT_PID may not be set so we can't use `ssh-agent -k`)
+    # Kill all existing agents for the current user (we can't use `ssh-agent -k` because SSH_AGENT_PID may not be set,
+    # and ssh-agent runs in Firejail anyway and can't kill anything outside of its jail)
     pkill -u "$USER" ssh-agent
-    # /!\ `killall ssh-agent` doesn't work here! For some reason it can't find
-    # any running ssh-agent processes.
+    # /!\ `killall ssh-agent` doesn't work here! For some reason it can't find any running ssh-agent processes.
 
-    # Start the agent
-    ssh-agent -t "$SSH_AGENT_LIFETIME" -s >"$ssh_agent_envfile"
-    . "$ssh_agent_envfile"
+    # Now start the agent
+    # Since we are (or should be) running under Firejail, which doesn't behave well with ssh-agent (see netblue30/firejail#1616),
+    # we'll do things a bit differently:
+    # * create the temporary agent socket directory ourselves
+    # * start the agent in foreground mode (this is were Firejail will kick in), with its socket in the above temporary directory
+    # * export SSH_AUTH_SOCK and SSH_AGENT_PID ourselves
+    # This way, we control where the socket is, and don't need to rely on the envfile which may not be available since we must background ssh-agent ourselves. However, we still create the envfile, for other shells to use.
+    # SSH_AGENT_PID is the PID of the parent Firejail, but that's fine for the purpose of killing the agent.
+    local ssh_agent_socket  # don't assign yet, it would mangle the return code of mktemp
+    ssh_agent_socket="$(mktemp -d --tmpdir ssh-XXXXXXXXXX)/S.ssh-agent" || { printf 'Error: %s: mktemp' "$FUNCNAME"; return 1; }
+    ssh-agent -t "$SSH_AGENT_LIFETIME" -s -D -a "$ssh_agent_socket" >"$ssh_agent_envfile" & disown
+    export SSH_AUTH_SOCK="$ssh_agent_socket" SSH_AGENT_PID="$!"
 
     # Add auto keys with year-long lifetime (except if leap year, ok)
-    ssh-add -t 365d "${SSH_AGENT_AUTOKEYS[@]}"
+    # Since the agent process is detached, we're not sure yet that it's up and running. Hence we try to add the keys several times before giving up.
+    (
+        for ((i=0; i<10; i++)); do
+            ssh-add -t 365d "${SSH_AGENT_AUTOKEYS[@]}" &>/dev/null && exit
+            sleep 1
+        done
+        echo 'Warning: failed to add SSH_AGENT_AUTOKEYS after 10 tries'
+        exit 1
+    ) & disown
 
     return 0
 }
