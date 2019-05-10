@@ -4,8 +4,13 @@
 # a login manager warning you that shutting down would be rude to them
 
 
-# Build full name
-[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
+# Environment variables
+: "${EFIVARFS:=efivarfs}"
+
+
+# Global variables
+efientries=()
+efivarfs_access=
 
 
 # Functions
@@ -13,6 +18,10 @@ die() { # *:message
     printf "Error: %s\n" "$*"
     exit 1
 } >&2
+
+require() { # 1:binary
+    command -v "$1" &>/dev/null || die "missing utility: $1"
+}
 
 help() {
     cat <<-EOF
@@ -22,10 +31,74 @@ help() {
 	With no options, '-h now' is assumed.
 	
 	Options:
-	  -e | --efi [ENTRY]        EFI entry to boot into on next bootup
-	                            (requires efibootmgr)
+	  -e | --efi-bootnext [ENTRY]       EFI BootNext entry to boot into on next bootup
+	                                    if empty, lets the user select an entry
+	                                    (requires efibootmgr)
 	EOF
 }
+
+find_efiname() { # 1:text
+    local entry bootnum bootname
+    for entry in "${efientries[@]}"
+    do
+        read -r bootnum bootname <<<"$entry"
+        [[ "${bootname,,}" == "${1,,}"* ]] && { echo "${bootnum,,}"; break; }
+    done
+}
+
+parse_efientry() { # 1:usertext 2:labeltext 3:currentnum 3:failfmt
+    local usertext="${1,,}" labeltext="${2,,}" currentnum="$3" failfmt="$4" bootnum
+    # Dirty trick: concatenate the text label from the menu (when no user text is provided on the command line) and the user text
+    # This makes all tests (glob against default*, grep for bootnum) check against the text label first, then against the user text
+
+    # Default: no bootnum
+    [[ "$labeltext$usertext" =~ ^default( \(.*)?$ ]] && return 0
+
+    # Current: print the bootnum
+    [[ "$labeltext$usertext" =~ ^current(: .*)?$ ]] && { echo "$currentnum"; return 0; }
+
+    # Extract the bootnum: first occurrence of BootXXXX in the label+user texts, since the label text (if set) always contains a bootnum
+    # Another dirty trick: prepend "boot" to the user text, in case it's just the 4 digits of an entry
+    bootnum="$(grep -o 'boot[0-9a-f]\{4\}' <<<"${labeltext}boot$usertext" | head -n1)"
+    [[ -n "$bootnum" ]] && { echo "${bootnum#boot}"; return 0; }
+
+    # No bootnum found, so we're dealing with a user text that's perhaps a name
+    bootnum="$(find_efiname "$usertext")"
+    [[ -n "$bootnum" ]] && { echo "${bootnum#boot}"; return 0; }
+
+    # Nope :(
+    printf -- "$failfmt" "$1" >&2
+    return 1
+}
+
+ensure_efivarfs() {
+    # Ensure the EFI variables filesystem is mounted read-write
+    local -a efivarfsopts
+    local opt
+    IFS=, read -a efivarfsopts <<<"$(mount | sed -n -e 's/^'"$EFIVARFS"' on [^ ]\+ type efivarfs (\([^)]\+\))$/\1/p')"
+    (( ${#efivarfsopts[@]} != 0 )) || die "EFI variables filesystem not mounted as $EFIVARFS"
+    for opt in "${efivarfsopts[@]}"
+    do
+        case "$opt" in
+            ro|rw) efivarfs_access="$opt" ;;
+        esac
+    done
+    case "$efivarfs_access" in
+        ro) mount -o remount,rw "$EFIVARFS" ;;
+        rw) ;;
+        *) die "can't determine access mode (ro/rw) for EFI variables filesystem: $EFIVARFS" ;;
+    esac
+}
+
+restore_efivarfs() {
+    # Restore access mode for the EFI variables filesystem
+    if [[ "$efivarfs_access" == ro ]]
+    then
+        efivarfs_access=
+        mount -o remount,ro "$EFIVARFS"
+    fi
+}
+
 
 # Check for --help
 if [[ "$1" =~ ^(-h|--help)$ ]]
@@ -37,26 +110,20 @@ fi
 # Process arguments
 getopt -T &> /dev/null
 (( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l efi:,help -o +e:h -- "$@")" || exit 128
+getopt="$(getopt -n "${0##*/}" -l efi-bootnext::,help -o +e::h -- "$@")" || exit 128
 eval set -- "$getopt"
-
 # explicitly don't set efientry, we need to differentiate between unset and set to an empty value
 while true
 do
     case "$1" in
         -e|--efi) efientry="$2"; shift ;;
-        -h|--help)
-            help
-            exit 0
-            ;;
-        --)
-            shift
-            break
-            ;;
+        -h|--help) help; exit 0 ;;
+        --) shift; break ;;
         *) die "internal error!" ;;
     esac
     shift
 done
+[[ -v efientry ]] && require efibootmgr
 
 # Print logged on users
 echo -e "\033[01;33mLogged on users:\033[00m"
@@ -68,39 +135,48 @@ echo -ne "\033[01;37mDo you really want to shutdown the computer? yes/no:\033[00
 read -r ans
 case "${ans,,}" in
     yes)
-        # Set the entry to reboot on for EFI
+        # Set the entry to reboot into for EFI
         if [[ -v efientry ]]
         then
-            # Check for efibootmgr
-            PATH="$PATH:/sbin:/usr/sbin"
-            command -v efibootmgr &>/dev/null || die "efibootmgr not found"
+            # Gather boot entries
+            efibootmgr_out="$(efibootmgr)" || die "efibootmgr: failed to list boot entries"
+            readarray -t efientries <<<"$(sed -n -e 's/^\(Boot[0-9A-Fa-f]\{4\}\)\*\? \(.*\)$/\1 \2/p' <<<"$efibootmgr_out")"
+            readarray -t efilabels <<<"$(sed -n -e 's/^\(Boot[0-9A-Fa-f]\{4\}\)\*\? \(.*\)$/\1: \2/p' <<<"$efibootmgr_out")"
+            current="$(sed -n -e 's/^BootCurrent: \([0-9A-Fa-f]\{4\}\)$/\1/p' <<<"$efibootmgr_out")"
+            default="$(sed -n -e 's/^BootOrder: \([0-9A-Fa-f]\{4\}\).*$/\1/p' <<<"$efibootmgr_out")"
 
-            # Set/reset the boot entry
-            if [[ -n "$efientry" ]]
+            if [[ -z "$efientry" ]]
             then
-                # Gather boot entries
-                efientries="$(efibootmgr | sed -n -e 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? \(.*\)$/\1 \2/p')" || die "efibootmgr: failed to list boot entries"
-
-                # Validate the boot entry
-                efinum=
-                while read -r bootnum bootname
+                # Select a boot entry
+                echo
+                echo "Select the EFI boot entry to boot into next:"
+                select label in "current: Boot$current" "${efilabels[@]}" "default (Boot$default)"
                 do
-                    [[ "$efientry" == "$bootnum" || "$efientry" == "$bootname" ]] && { efinum="$bootnum"; break; }
-                done <<<"$efientries"
-                [[ -z "$efinum" ]] && die "invalid EFI boot entry: $efientry"
-
-                # Set the BootNext entry
-                sudo efibootmgr --bootnext "$efinum" || die "efibootmgr: failed to set next boot entry: $efinum"
+                    # Trick: 0001 is interpreted by select as choice 1, but we want it as a literal 0001
+		    [[ "${REPLY#0}" != "$REPLY" ]] && label=
+                    efinum="$(parse_efientry "$REPLY" "$label" "$current" "unrecognized entry: %s\n")" && break
+                    echo
+                done || exit 1
             else
-                # Reset the BootNext entry
-                sudo efibootmgr --delete-bootnext || die "efibootmgr: failed to reset next boot entry"
+                # Find the boot entry
+                efinum="$(parse_efientry "$efientry" "" "$current" "Error: invalid EFI boot entry: %s\n")" || exit 1
             fi
+
+            # Set/reset the BootNext entry
+            ensure_efivarfs
+            if [[ -n "$efinum" ]]
+            then
+                efibootmgr --bootnext "$efinum" || die "efibootmgr: failed to set next boot entry: $efinum"
+            else
+                efibootmgr --delete-bootnext || die "efibootmgr: failed to reset next boot entry"
+            fi
+            restore_efivarfs
         fi
 
         # Shutdown
         opts=(-h now)
         (( $# )) && opts=("$@")
-        sudo shutdown "${opts[@]}"
+        shutdown "${opts[@]}"
         ;;
 
     no)
