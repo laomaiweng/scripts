@@ -1,17 +1,15 @@
 #!/bin/bash
 # ssh-agent-test - test for a running SSH agent
-# ssh-agent-respawn - restart the SSH agent
+# ssh-agent-fix-firejail-pid - fix the PID written by a Firejail'ed SSH agent to its environment file
+# ssh-agent-add-session-keys - add session keys (those in ~/.ssh/session-keys.d) to the SSH agent
+# ssh-agent-respawn - restart the SSH agent (with or without Firejail)
 
-
-# SSH keys to load automatically on agent restart
-declare -a export SSH_AGENT_AUTOKEYS
-export SSH_AGENT_AUTOKEYS
 
 # Default lifetime of keys added to the agent
 export SSH_AGENT_LIFETIME=8h
 
 
-function ssh-agent-test() {
+ssh-agent-test() {
     (( $# == 1 )) || { echo "Usage: $FUNCNAME <env-file>" >&2; return 1; }
 
     local ssh_agent_envfile="$1"
@@ -30,7 +28,7 @@ function ssh-agent-test() {
 }
 
 
-function ssh-agent-fix-firejail-pid() {
+ssh-agent-fix-firejail-pid() {
     (( $# == 1 )) || { echo "Usage: $FUNCNAME <env-file>" >&2; return 1; }
 
     # Checks
@@ -51,7 +49,21 @@ function ssh-agent-fix-firejail-pid() {
 }
 
 
-function ssh-agent-respawn() {
+ssh-agent-add-session-keys() {
+    # Save current state of nullglob shell option, then enable it
+    shopt -q nullglob
+    local _nullglob=$?
+    shopt -s nullglob
+
+    # Add all keys in ~/.ssh/session-keys.d, as the pam_ssh session management module does
+    ssh-add -t 365d ~/.ssh/session-keys.d/*
+
+    # Restore nullglob
+    (( _nullglob )) && shopt -u nullglob
+}
+
+
+ssh-agent-respawn() {
     (( $# == 1 )) || { echo "Usage: $FUNCNAME <env-file>" >&2 ; return 1 ; }
 
     local ssh_agent_envfile="$1"
@@ -67,9 +79,6 @@ function ssh-agent-respawn() {
         # No Firejail in sight, we should be safe just running the agent
         ssh-agent -t "$SSH_AGENT_LIFETIME" -s >"$ssh_agent_envfile"
         source "$ssh_agent_envfile"
-
-        # Then we can just add the keys (this works fine even when the array is empty)
-        ssh-add -t 365d "${SSH_AGENT_AUTOKEYS[@]}" &>/dev/null
     else
         # So we're going to be running under Firejail, which doesn't behave well with ssh-agent (see netblue30/firejail#1616)
         # We need to do things a bit differently:
@@ -95,11 +104,8 @@ function ssh-agent-respawn() {
         (
             for ((i=0; i<10; i++)); do
                 if ssh-agent-test "$ssh_agent_envfile"; then
-                    # Agent is up!
-                    # Fix the PID in the envfile
+                    # Agent is up! Fix the PID in the envfile
                     ssh-agent-fix-firejail-pid "$ssh_agent_envfile"
-                    # Add auto keys with year-long lifetime (except if leap year, ok)
-                    ssh-add -t 365d "${SSH_AGENT_AUTOKEYS[@]}" &>/dev/null
                     exit 0
                 fi
                 sleep 1
