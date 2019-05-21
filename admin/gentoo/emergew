@@ -20,16 +20,19 @@ fi
 : "${PORTAGE_TMPDIR_SIZE:=9G}"
 
 # Kernel-related variables
-kernelver="$(uname -r)" || die 'uname failed, perhaps export KERNEL_DIR and KBUILD_OUTPUT explicitly?'
+if [[ ! -v KERNELVER || -n "$KERNELVER" ]]
+then
+    [[ -v KERNELVER ]] || KERNELVER="$(uname -r)" || die 'uname failed, perhaps export KERNELVER/KERNEL_DIR/KBUILD_OUTPUT explicitly?'
+fi
 if [[ ! -v KERNEL_DIR || -n "$KERNEL_DIR" ]]
 then
-    [[ -v KERNEL_DIR ]] || KERNEL_DIR="$(readlink "/lib/modules/$kernelver/source")" || die 'readlink failed to read source directory symlink from /lib/modules, perhaps export KERNEL_DIR explicitly?'
+    [[ -v KERNEL_DIR ]] || KERNEL_DIR="$(readlink "/lib/modules/$KERNELVER/source")" || die 'readlink failed to read source directory symlink from /lib/modules, perhaps export KERNEL_DIR explicitly?'
     [[ -d "$KERNEL_DIR" ]] || die "no such directory: KERNEL_DIR: $KERNEL_DIR"
 fi
 export KERNEL_DIR
 if [[ ! -v KBUILD_OUTPUT || -n "$KBUILD_OUTPUT" ]]
 then
-    [[ -v KBUILD_OUTPUT ]] || KBUILD_OUTPUT="$(readlink "/lib/modules/$kernelver/build")" || die 'readlink failed to read build directory symlink from /lib/modules, perhaps export KBUILD_OUTPUT explicitly?'
+    [[ -v KBUILD_OUTPUT ]] || KBUILD_OUTPUT="$(readlink "/lib/modules/$KERNELVER/build")" || die 'readlink failed to read build directory symlink from /lib/modules, perhaps export KBUILD_OUTPUT explicitly?'
     [[ -d "$KBUILD_OUTPUT" ]] || die "no such directory: KBUILD_OUTPUT: $KBUILD_OUTPUT"
 fi
 export KBUILD_OUTPUT
@@ -54,6 +57,7 @@ then
 	  * resume    (r): emerge --resume "\$@"
 	
 	Kernel-related variables:
+	  KERNELVER="$KERNELVER"
 	  KERNEL_DIR="$KERNEL_DIR"
 	  KBUILD_OUTPUT="$KBUILD_OUTPUT"
 	  USE="$USE"
