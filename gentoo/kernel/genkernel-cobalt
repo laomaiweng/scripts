@@ -2,7 +2,6 @@
 # genkernel-cobalt - kernel and initramfs generation script for Cobalt
 
 #TODO: when not building modules, check modules are correctly signed (esp. nvidia modules embedded in initramfs, but more generally all AMODULES_*)
-#TODO: use `sbman` to sign the kernel for SecureBoot
 #TODO: print status of envvars at start
 
 
@@ -32,6 +31,7 @@ KERNELVER="${KERNELVER#-}"
 : "${EFIVARFS:=efivarfs}"
 EMERGEOPTS=( $EMERGEOPTS )
 : "${GK_LOGLEVEL:=1}"
+: "${SBMAN:=/boot/keys/sbman}"
 
 # Global variables
 efipart_mounted=false
@@ -90,6 +90,8 @@ help() {
 	    -e | --[no-]efi         update the EFI System partition
 	                            (default: enabled)
 	    -k | --[no-]kernel      build the kernel itself
+	                            (default: enabled)
+	    -s | --[no-]secure-boot sign kernel for SecureBoot (using \`sbman\`, UNRELEASED)
 	                            (default: enabled)
 	    -m | --[no-]modules     emerge @module-rebuild
 	                            (default: enabled)
@@ -152,12 +154,13 @@ require getopt
 # Process options
 getopt -T &> /dev/null
 (( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l help,efi,no-efi,kernel,no-kernel,modules,no-modules,nvidia,no-nvidia,backup,no-backup -o +hnegkmNb -- "$@")" || exit 1
+getopt="$(getopt -n "${0##*/}" -l help,efi,no-efi,kernel,no-kernel,secure-boot,no-secure-boot,modules,no-modules,nvidia,no-nvidia,backup,no-backup -o +hneksmNb -- "$@")" || exit 1
 eval set -- "$getopt"
 true=true       # trick for -n
 negate=false
 efi=true
 kernel=true
+secureboot=true
 modules=true
 nvidia="$(grep -qxF 'CONFIG_DRM_NOUVEAU=y' "$KERNELCONF" && echo false || echo true)"
 backup=true
@@ -175,6 +178,9 @@ do
         -k) kernel=$true ;;
         --kernel) kernel=true ;;
         --no-kernel) kernel=false ;;
+        -s) secureboot=$true ;;
+        --secure-boot) secureboot=true ;;
+        --no-secure-boot) secureboot=false ;;
         -m) modules=$true ;;
         --modules) modules=true ;;
         --no-modules) modules=false ;;
@@ -200,6 +206,10 @@ then
     require mkdir --kernel
     require genkernel --kernel
     require chgrp --kernel
+fi
+if $secureboot
+then
+    require "$SBMAN" --secureboot
 fi
 if $efi
 then
@@ -313,7 +323,7 @@ then
     do
         (( count++ ))
         echo -n "$module "
-	if "$extract_module_sig_script" -d "$module" >&/dev/null
+        if "$extract_module_sig_script" -d "$module" >&/dev/null
         then
             echo "ALREADY SIGNED"
         else
@@ -346,6 +356,15 @@ then
     # * include only necessary modules in the initramfs, but no firmware, it's a custom kernel with most required components built in (--ramdisk-modules --no-all-ramdisk-modules --no-firmware)
     # * don't compress the initramfs, but embed it into the kernel (--no-compress-initramfs --integrated-initramfs)
     genkernel ${GK_LOGLEVEL:+--loglevel="$GK_LOGLEVEL"} --no-mountboot --install $($backup && printf -- --symlink || printf -- --no-symlink) --kerneldir="$KERNELDIR" --kernel-config="$KERNELCONF" --kernel-outputdir="$builddir" --kernname="$KERNELNAME" --makeopts="-j8 -l9" --ramdisk-modules --no-all-ramdisk-modules --no-firmware --keymap --busybox --luks --btrfs --no-compress-initramfs --integrated-initramfs initramfs || die "kernel build failed"
+fi
+
+
+## Sign for SecureBoot
+## TODO: is it possible to sign the kernel even earlier, in a more locked-down directory?
+if $secureboot
+then
+    echo
+    "$SBMAN" sign "$kernelfile" || die "kernel signing failed"
 fi
 
 
