@@ -1,6 +1,10 @@
 #!/bin/bash
 # genkernel-cobalt - kernel and initramfs generation script for Cobalt
 
+#TODO: when not building modules, check modules are correctly signed (esp. nvidia modules embedded in initramfs, but more generally all AMODULES_*)
+#TODO: use `sbman` to sign the kernel for SecureBoot
+#TODO: print status of envvars at start
+
 
 # Early functions
 die() { # *:message
@@ -31,6 +35,7 @@ EMERGEOPTS=( $EMERGEOPTS )
 
 # Global variables
 efipart_mounted=false
+extract_module_sig_script="$KERNELDIR/scripts/extract-module-sig.pl"
 
 red="\E[1;31m"
 black="\E[00m"
@@ -98,16 +103,20 @@ help() {
 }
 
 require() {     # 1:command 2:reqby
-    command -v "$1" &>/dev/null || die "$1 is required ${2:+for $2 }but not available"
+    command -v "$1" &>/dev/null || die "missing required tool $1${2:+ for $2}"
 }
 
 require_package() { # 1:package 2:reqby *:useflags
     local package="$1" reqby="$2"
     shift 2
-    [[ -n "$(portageq best_version / "$package")" ]] || die "$package is required ${reqby:+for $reqby }but not available"
+    [[ -n "$(portageq best_version / "$package")" ]] || die "missing required package $package${reqby:+ for $reqby}"
     for use in "$@"; do
-        equery u "$package" | grep -q ^+"$use" || die "$package[$use] is required ${reqby:+for $reqby }but not available"
+        equery u "$package" | grep -q ^+"$use" || die "missing required USE $package[$use]${reqby:+ for $reqby}"
     done
+}
+
+require_openssl() { # 1:command 2:reqby
+    [[ "$(openssl no-"$1")" == "$1" ]] || die "missing required OpenSSL command $1${2:+ for $2}"
 }
 
 verbosedo() {   # 1:error_message *:command
@@ -210,8 +219,14 @@ then
     require grep --modules
     require emerge --modules
     require equery --modules
-    require dd --modules
-    require base64 --modules
+    [[ -x "$extract_module_sig_script" ]] || die "missing required script $extract_module_sig_script for --modules"
+    require sed --modules
+    require xxd --modules
+    require openssl --modules
+    require_openssl asn1parse --modules
+    require_openssl rsautl --modules
+    require sha512sum --modules
+    require cut --modules
 fi
 if $nvidia
 then
@@ -293,15 +308,12 @@ then
     echo
     echo
     echo "Signing modules:"
-    sigtext="~Module signature appended~"
     count=0
     for module in $(equery f $(equery b "/lib/modules/$kernelversion") | grep '^/lib/modules/'"${kernelversion//./\\.}"'/.*\.ko$')
     do
         (( count++ ))
         echo -n "$module "
-        # Look for "~Module signature appended~" at the end of the file
-        # (use `base64` to prevent Bash from choking on null bytes)
-        if [[ "$(dd if="$module" iflag=skip_bytes skip="$(($(stat -c %s "$module") - ${#sigtext} - 1))" status=none | base64)" == "$(base64 <<<"$sigtext")" ]]
+	if "$extract_module_sig_script" -d "$module" >&/dev/null
         then
             echo "ALREADY SIGNED"
         else
