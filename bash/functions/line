@@ -1,0 +1,8 @@
+#!/bin/bash
+# line - single out a line from standard input
+
+line() {
+    local n="${1:-1}"
+    (( n > 0 )) && head -n$((n)) | tail -n1
+    (( n < 0 )) && tail -n$((-n)) | head -n1
+}
