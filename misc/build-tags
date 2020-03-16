@@ -2,16 +2,23 @@
 # build ctags and cscope tags in the current directory
 
 exts=(c h x s S l y C H cc cpp hh hpp "$@")
-if [[ -f .ignore ]]; then
-    # honor .ignore
-    ctags -R --extras=fq --fields=afikKlmnsSzt --exclude=@.ignore
-    # disable pathname expansion since it occurs *after* command substitution and wrecks the arguments generated with $(printf -- " -name *.%s -o ") (and I can't seem to escape the *)
-    set -f
-    find . $(printf -- '-path ./%s -prune -o ' $(<.ignore)) -type f \( $(printf -- "-name *.%s -o " "${exts[@]}") -false \) -print | cscope -b -i-
-else
-    # no .ignore
-    ctags -R --extras=fq --fields=afikKlmnsSzt .
-    # disable pathname expansion since it occurs *after* command substitution and wrecks the arguments generated with $(printf -- " -name *.%s -o ") (and I can't seem to escape the *)
-    set -f
-    find . -type f \( $(printf -- '-name *.%s -o ' "${exts[@]}") -false \) -print | cscope -b -i-
-fi
+cscope_exts=($(printf -- "-name *.%s -o " "${exts[@]}"))
+
+ctags_ignore=()
+cscope_ignore=()
+
+#disable pathname expansion since it occurs *after* command substitution and wrecks the arguments generated with $(printf ...)
+set -f
+
+ignore() { # 1:filename
+    # FIXME: this doesn't do well with spaces...
+    # use sed to remove trailing /s since they don't play well with ctags or find's -path
+    ctags_ignore+=($(printf -- '--exclude=%s ' $(sed -e 's|/$||' "$1")))
+    cscope_ignore+=($(printf -- '-path ./%s -prune -o ' $(sed -e 's|/$||' "$1")))
+}
+
+[[ -f .ignore ]] && ignore .ignore
+[[ -f .gitignore ]] && ignore .gitignore
+
+ctags -R --extras=fq --fields=afikKlmnsSzt "${ctags_ignore[@]}"
+find . "${cscope_ignore[@]}" -type f \( "${cscope_exts[@]}" -false \) -print | cscope -b -i-
