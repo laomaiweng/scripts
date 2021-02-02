@@ -1,0 +1,22 @@
+#!/bin/bash
+
+die() {
+    local rc=$?
+    printf "error: ${@[0]}\n" "${@:1}" >&2
+    exit $rc
+}
+
+if [[ "$1" =~ ^(-h|--help)$ ]]; then
+    printf "usage: git autobundle <repo> [<bundle>]\n" >&2
+    exit 0
+fi
+
+repo="$1"
+bundle="$2"
+[[ -n "$bundle" ]] || bundle="${repo##*/}".git
+[[ "${bundle:0:1}" == / ]] || bundle=../"$bundle" # relative to git directory
+clone="${repo##*/}".dir
+
+git clone --bare "$repo" "$clone" || die "git clone failed"
+(cd "$clone" && git bundle create "$bundle" --all) || die "git bundle failed"
+rm -rf "$clone" || die "cleanup failed"
