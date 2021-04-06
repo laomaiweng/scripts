@@ -91,7 +91,7 @@ ssh-agent-respawn() {
         # (since we background ssh-agent ourselves). However, we still create the envfile, for other shells to use.
         local ssh_agent_socket  # don't assign yet, it would mangle the return code of mktemp
         ssh_agent_socket="$(mktemp -d --tmpdir ssh-XXXXXXXXXX)/S.ssh-agent" || { echo "Error: $FUNCNAME: mktemp"; return 1; }
-        ssh-agent -a "$ssh_agent_socket" -t "$SSH_AGENT_LIFETIME" -s >"$ssh_agent_envfile" & disown     # NB: keep in sync with sed expr below
+        ssh-agent -a "$ssh_agent_socket" -t "$SSH_AGENT_LIFETIME" -s >"$ssh_agent_envfile" & disown -r $!
         export SSH_AUTH_SOCK="$ssh_agent_socket" SSH_AGENT_PID="$!"
 
         # An issue remains in that the envfile will hold the PID of ssh-agent in its Firejail PID namespace, which is pretty
@@ -113,7 +113,7 @@ ssh-agent-respawn() {
             echo "Warning: $FUNCNAME: ssh-agent still unreachable after 10 attempts"
             exit 1
         ) & disown
-        # NB: if the current shell dies before this background jobs completes, the envfile will retain the namespaced PID. That's life.
+        # NB: if the current shell dies before this background job completes, the envfile will retain the namespaced PID. That's life.
     fi
 
     return 0
