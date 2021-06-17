@@ -2,23 +2,29 @@
 # build ctags and cscope tags in the current directory
 
 exts=(c h x s S l y C H cc cpp hh hpp "$@")
-cscope_exts=($(printf -- "-name *.%s -o " "${exts[@]}"))
+find_exts=()
+for e in "${exts[@]}"; do find_exts+=(-name "*.$e" -o); done
+[[ -v VERBOSE ]] && echo 'exts=(' "${exts[@]}" ')'
 
 ctags_ignore=()
-cscope_ignore=()
+find_ignore=()
 
-#disable pathname expansion since it occurs *after* command substitution and wrecks the arguments generated with $(printf ...)
-set -f
-
-ignore() { # 1:filename
-    # FIXME: this doesn't do well with spaces...
-    # use sed to remove trailing /s since they don't play well with ctags or find's -path
-    ctags_ignore+=($(printf -- '--exclude=%s ' $(sed -e 's|/$||' "$1")))
-    cscope_ignore+=($(printf -- '-path ./%s -prune -o ' $(sed -e 's|/$||' "$1")))
+ignore() {
+    local pattern
+    while read -r pattern; do
+        # remove trailing / since it doesn't play well with `ctags --exclude` or `find -path`
+        pattern="${pattern%/}"
+        ctags_ignore+=(--exclude="$pattern")
+        find_ignore+=(-path ./"$pattern" -prune -o)
+    done
 }
 
-[[ -f .ignore ]] && ignore .ignore
-[[ -f .gitignore ]] && ignore .gitignore
+[[ -f .ignore ]] && ignore <.ignore
+[[ -f .gitignore ]] && ignore <.gitignore
 
-ctags -R --extras=fq --fields=afikKlmnsSzt "${ctags_ignore[@]}"
-find . "${cscope_ignore[@]}" -type f \( "${cscope_exts[@]}" -false \) -print | cscope -b -i-
+[[ -v VERBOSE ]] && echo find . "${find_ignore[@]}" -type f \( "${find_exts[@]}" -false \) -print \>cscope.files
+find . "${find_ignore[@]}" -type f \( "${find_exts[@]}" -false \) -print >cscope.files
+[[ -v VERBOSE ]] && echo ctags -R --extras=fq --fields=afikKlmnsSzt "${ctags_ignore[@]}" -L cscope.files
+ctags -R --extras=fq --fields=afikKlmnsSzt "${ctags_ignore[@]}" -L cscope.files
+[[ -v VERBOSE ]] && echo cscope -b
+cscope -b
