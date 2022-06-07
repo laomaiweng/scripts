@@ -1,0 +1,100 @@
+#!/bin/bash
+
+warn() {
+    printf "warning: %s\n" "$*"
+} >&2
+
+die() {
+    printf "error: %s\n" "$*"
+    exit 1
+} >&2
+
+require() {  # 1:prog
+    command -v "$1" &>/dev/null || die "missing dependency: $1"
+}
+
+gen_output_name() {  # 1:dot_filename
+    $keep || return
+    local out="${1%.dot}"
+    if [[ "$out" == "$1" ]]; then
+        warn "filename doesn't end in .dot, not keeping: $1"
+        return
+    fi
+    printf "%s.%s" "$out" "$DOTVIEW_FORMAT"
+}
+
+render() {  # 1:input
+    # kept output
+    [[ -n "$1" ]] && out="$(gen_output_name "$1")"
+    if $keep && [[ -n "$out" ]]; then
+        dot -T"$DOTVIEW_FORMAT" "$1" | tee "$out"
+    else
+        dot -T"$DOTVIEW_FORMAT" ${1:+"$1"}
+    fi
+}
+
+render_tmp() {  # 1:input
+    tmp="$tmpdir/${1##*/}.$DOTVIEW_FORMAT"
+    render "$1" >"$tmp"
+}
+
+cleanup() {
+    [[ -d "$tmpdir" ]] && rm -rf "$tmpdir"
+}
+
+# defaults
+: "${DOTVIEW_FORMAT:=png}"
+: "${DOTVIEW_PROGRAM_STDIN:="$DOTVIEW_PROGRAM"}"
+
+if [[ "$1" =~ ^(-h|--help)$ ]]; then
+    cat <<-EOF
+	usage: ${0##*/} [options] <file|dir> ...
+	
+	variables:
+	    DOTVIEW_FORMAT          dot output format (current: $DOTVIEW_FORMAT)
+	    DOTVIEW_PROGRAM         viewer program (current: $DOTVIEW_PROGRAM)
+	    DOTVIEW_PROGRAM_STDIN   viewer program for single image (current: $DOTVIEW_PROGRAM_STDIN)
+	
+	options:
+	    -k, --keep        keep generated images (.dot -> .\$DOTVIEW_FORMAT)
+	EOF
+    exit
+fi
+
+# check viewer
+require "${DOTVIEW_PROGRAM_STDIN%% *}" # only require the single-image program, we can fall back to it if missing the multi-image program
+require dot
+require tee
+require mktemp
+require rm
+
+[[ "$1" =~ ^(-k|--keep)$ ]] && { shift; keep=true; } || keep=false
+
+# special case if only 1 file: don't touch the disk
+if (( $# == 0 )) || { (( $# == 1 )) && [[ -f "$1" ]]; }; then
+    render "$1" | $DOTVIEW_PROGRAM_STDIN
+    exit
+fi
+
+tmpdir="$(mktemp --tmpdir -d dotview.XXXXXXXX)"
+trap cleanup EXIT
+
+# render all dots first
+shopt -s nullglob
+for f in "$@"; do
+    if [[ -d "$f" ]]; then
+        for ff in "$f"/*.dot; do
+            render_tmp "$ff"
+        done
+    else
+        render_tmp "$f"
+    fi
+done
+# now invoke the viewer
+if [[ -n "$DOTVIEW_PROGRAM" ]]; then
+    $DOTVIEW_PROGRAM "$tmpdir"
+else
+    for f in "$tmpdir"/*; do
+        $DOTVIEW_PROGRAM_STDIN <"$f"
+    done
+fi

@@ -1,0 +1,138 @@
+#!/bin/bash
+
+warn() {
+    printf "warning: %s\n" "$*"
+} >&2
+
+die() {
+    printf "error: %s\n" "$*"
+    exit 1
+} >&2
+
+require() {  # 1:prog
+    command -v "$1" &>/dev/null || die "missing dependency: $1"
+}
+
+keep() {  # 1:input 2:output [3:omit_input]
+    $keep || return
+    local indir="${1%/*}"
+    [[ "$indir" == "$1" ]] && indir=.
+    cp "$2" "$indir"/
+    local n="${#1}"
+    local in="$1"
+    ${3:-false} && in=""
+    printf "%${n}s -> %s\n" "$in" "$indir/${2##*/}"
+}
+
+render() {  # 1:input
+    local inext="${1##*.}"
+    local inbase="${1##*/}"
+    local outbase="${inbase%.*}"
+    local tmpbase="$tmpdir/$outbase"
+    local tmp="$tmpbase.$MMDVIEW_FORMAT"
+
+    mmdc ${quiet:+-q} "${mmdc_opts[@]}" -i "$1" -o "$tmp"
+
+    # md inputs may generate multiple outputs
+    if [[ "$inext" == md ]]; then
+        local omit=false
+        for out in "$tmpbase"-*."$MMDVIEW_FORMAT"; do
+            keep "$1" "$out" "$omit"
+            omit=true
+        done
+    else
+        keep "$1" "$tmp"
+    fi
+}
+
+cleanup() {
+    [[ -d "$tmpdir" ]] && rm -rf "$tmpdir"
+}
+
+# defaults
+: "${MMDVIEW_EXTS:=md:mmd}"
+: "${MMDVIEW_FORMAT:=png}"
+: "${MMDVIEW_PROGRAM_SINGLE:="$MMDVIEW_PROGRAM"}"
+
+if [[ "$1" =~ ^(-h|--help)$ ]]; then
+    cat <<-EOF
+	usage: ${0##*/} [options] [-- mmdc_options --] <file|dir> ...
+	
+	variables:
+	    MMDVIEW_EXTS                :-separated list of file extensions to render (current: $MMDVIEW_EXTS)
+	    MMDVIEW_FORMAT              mmdc output format (current: $MMDVIEW_FORMAT)
+	    MMDVIEW_PROGRAM             viewer program (current: $MMDVIEW_PROGRAM)
+	    MMDVIEW_PROGRAM_SINGLE      single-image viewer program (current: $MMDVIEW_PROGRAM_SINGLE)
+	
+	options:
+	    -k, --keep        keep generated images
+            -q, --quiet       silence mmdc output
+	EOF
+    exit
+fi
+
+# split on :, see https://stackoverflow.com/a/45201229/3019933
+readarray -td: exts <<<"$MMDVIEW_EXTS":; unset 'exts[-1]'
+
+# check viewer
+require "${MMDVIEW_PROGRAM_SINGLE%% *}"  # only require the single-image program, we can fall back to it if missing the multi-image program
+require mmdc
+require tee
+require mktemp
+
+# process options
+getopt -T &>/dev/null
+(( $? == 4 )) || die "your getopt version is too old, get the enhanced getopt from util-linux!"
+getopt="$(getopt -n "${0##*/}" -l keep,quiet -o +kq -- "$@")" || exit 1
+eval set -- "$getopt"
+keep=false
+quiet=
+while true; do
+    case "$1" in
+        -k|--keep) keep=true ;;
+        -q|--quiet) quiet=1 ;;
+        --) shift ; break ;;
+        *) die "getopt failure" ;;
+    esac
+    shift
+done
+# mmdc options & inputs
+inputs=()
+mmdc_opts=()
+while (( $# > 0 )); do
+    if [[ "$1" == -- ]]; then
+        # found a double dash, this indicates previous arguments were mmdc options
+        mmdc_opts=("${inputs[@]}")
+        inputs=()
+    else
+        inputs+=("$1")
+    fi
+    shift
+done
+(( ${#inputs[@]} < 1 )) && die "missing input"
+
+tmpdir="$(mktemp --tmpdir -d mmdview.XXXXXXXX)"
+trap cleanup EXIT
+
+# render all graphs first
+shopt -s nullglob
+for f in "${inputs[@]}"; do
+    if [[ -d "$f" ]]; then
+        for e in "${exts[@]}"; do
+            for ff in "$f"/*."$e"; do
+                render "$ff"
+            done
+        done
+    else
+        render "$f"
+    fi
+done
+
+# now invoke the viewer
+if [[ -n "$MMDVIEW_PROGRAM" ]]; then
+    $MMDVIEW_PROGRAM "$tmpdir"
+else
+    for f in "$tmpdir"/*; do
+        $MMDVIEW_PROGRAM_SINGLE "$f"
+    done
+fi
