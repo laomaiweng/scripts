@@ -25,8 +25,10 @@ if (( $# != 1 )) || [[ "$1" =~ ^(-h|--help) ]]; then
     echo 
     shopt -s nullglob
     for d in "$base"/!(usb*); do
-        a="$(</$d/authorized)"
-	printf "  %-20s $a\n" "${d##*/}"
+        [[ "$(</$d/authorized)" == 1 ]] && access=authorized || access=blocked
+	product=
+	[[ -r "/$d/product" ]] && product="($(</$d/product))"
+	printf "  %-20s %-20s %s\n" "${d##*/}" "$access" "$product"
     done
     shopt -u nullglob
     exit
