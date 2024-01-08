@@ -1,0 +1,40 @@
+#!/bin/bash
+
+shopt -s extglob  # needed for usb device enumeration
+
+die() {
+    echo "error: $*"
+    exit 1
+} >&2
+
+self="${0##*/}"
+case "$self" in
+    usb-authorize) value=1; ;;
+    usb-deauthorize) value=0 ;;
+    *) die "unsupported name!" ;;
+esac
+
+base=/sys/bus/usb/devices
+
+if (( $# != 1 )) || [[ "$1" =~ ^(-h|--help) ]]; then
+    if (( $# != 0 )); then
+        echo "usage: $self <hub-port>"
+        echo
+    fi
+    echo "available devices:"
+    echo 
+    shopt -s nullglob
+    for d in "$base"/!(usb*); do
+        a="$(</$d/authorized)"
+	printf "  %-20s $a\n" "${d##*/}"
+    done
+    shopt -u nullglob
+    exit
+fi
+
+dev="$1"
+
+[[ "${dev//"/"}" == "$dev" ]] || die "invalid character in device id: /"
+[[ -d "$base/$dev" ]] || die "no such device: $dev"
+
+echo $value >"$base/$dev/authorized" && echo "device $dev ${self#usb-}d"
