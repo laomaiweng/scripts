@@ -11,8 +11,8 @@ if [[ "$1" =~ ^(-h|--help)$ ]]; then
     exit 0
 fi
 
-repo="$1"
-while [[ "${repo: -1}" == / ]]; do repo="${repo%/}"; done
+shopt -s extglob
+repo="${1%%+(/)}"  # strip trailing /s
 bundle="$2"
 [[ -n "$bundle" ]] || bundle="${repo##*/}".git
 [[ "${bundle:0:1}" == / ]] || bundle=../"$bundle" # relative to git directory
