@@ -261,15 +261,15 @@ function path() {
 
             # Append|Prepend: add DIRS to the specified path variable
             append|prepend)
-                # Build new path directories list
+                # Build new path directories list (stripping trailing /s)
                 [[ -z "$1" ]] && { echo "Error: empty directory path in DIRS!" >&2 ; return 1 ; }
-                local newpath="$1"
+                local newpath="${1%%+(/)}"
                 shift
                 local d
                 for d in "$@"
                 do
                     [[ -z "$d" ]] && { echo "Error: empty directory path in DIRS!" >&2 ; return 1 ; }
-                    newpath="$newpath:$d"
+                    newpath="$newpath:${d%%+(/)}"
                 done
 
                 # Add new path directories list
@@ -300,7 +300,8 @@ function path() {
                     do
                         # String remove ':DIR:' (that's why we need the enclosing ':' above ;
                         # the '::' are needed so that consecutive matching entries are also caught)
-                        local pattern=":$d:"
+                        # (also strip trailing /s in DIR)
+                        local pattern=":${d%%+(/)}:"
                         (( $glob )) && pattern=":*([!:])$d*([!:]):"
                         temppath="${temppath//$pattern/}"
                     done
