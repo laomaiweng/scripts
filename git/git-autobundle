@@ -12,12 +12,18 @@ if [[ -z "$1" || "$1" =~ ^(-h|--help)$ ]]; then
 fi
 
 shopt -s extglob
+
 repo="${1%%+(/)}"  # strip trailing /s
+base="${repo##*/}"
+base="${base%.git}"
+
 bundle="$2"
-[[ -n "$bundle" ]] || bundle="${repo##*/}".git
-[[ "${bundle:0:1}" == / ]] || bundle=../"$bundle" # relative to git directory
-clone="${repo##*/}".dir
+[[ -n "$bundle" ]] || bundle="$base".git
+[[ "${bundle:0:1}" == / ]] || bundle="$PWD/$bundle"
+clone="$(mktemp -d --tmpdir "autobundle.$base.XXXXXX")"
+trap 'rm -rf "$clone"' EXIT
 
 git clone --bare "$repo" "$clone" || die "git clone failed"
+mkdir -p "${bundle%/*}" || die "mkdir failed"
 (cd "$clone" && git bundle create "$bundle" --all) || die "git bundle failed"
 rm -rf "$clone" || die "cleanup failed"
