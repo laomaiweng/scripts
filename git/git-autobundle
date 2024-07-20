@@ -30,23 +30,26 @@ usage() {
 
 options:
   -x | --directories    create the bundle under a hierarchy of directories matching the remote repository path
-  -P | --prefix DIR     create the bundle (and hierarchy if used with -x) under the provided path"
+  -P | --prefix DIR     create the bundle (and hierarchy if used with -x) under the provided path
+  -C | --clone-opt OPT  pass the provided option to \`git clone\` (cumulative)"
     exit $rc
 } >&2
 
 getopt -T &> /dev/null
 (( $? != 4 )) && die "bad getopt"
-getopt="$(getopt -n "${0##*/}" -l directories,prefix:,help -o +xP:h -- "$@")" || exit $?
+getopt="$(getopt -n "${0##*/}" -l directories,prefix:,clone-opt:,help -o +xP:C:h -- "$@")" || exit $?
 eval set -- "$getopt"
 
 use_directories=false
 use_prefix=false
 prefix=
+clone_opts=()
 
 while true; do
     case "$1" in
         -x|--directories) use_directories=true ;;
         -P|--prefix) use_prefix=true; prefix="${2:-.}"; shift ;;
+        -C|--clone-opt) clone_opts+=("$2"); shift ;;
         -h|--help) usage 0 ;;
         --) shift; break ;;
         *) die "internal error" ;;
@@ -94,7 +97,7 @@ fi
 clone="$(mktemp -d --tmpdir "autobundle.$base.XXXXXX")"
 trap 'rm -rf "$clone"' EXIT
 
-git clone --bare "$repo" "$clone" || die "git clone failed"
+git clone --bare "${clone_opts[@]}" "$repo" "$clone" || die "git clone failed ${clone_opts+"(clone opts: ${clone_opts[*]})"}"
 mkdir -p "${abs_bundle%/*}" || die "mkdir failed"
 (cd "$clone" && git bundle create "$abs_bundle" --all) || die "git bundle failed"
 echo "Bundle created: $bundle"
