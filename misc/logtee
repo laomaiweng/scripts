@@ -1,0 +1,60 @@
+#!/bin/bash
+
+join_by() {
+    local d=${1-} f=${2-}
+    if shift 2; then
+        printf %s "$f" "${@/#/$d}"
+    fi
+}
+
+die() {
+    local rc=$?
+    echo "error: $*"
+    exit $rc
+} >&2
+
+readonly default_extension=.log
+readonly default_format=%Y%m%dT%H%M%S
+
+usage() {
+    local -i rc=$1
+    echo "usage: ${0##*/} [options] <basename>
+
+tee output to a log file suffixed by creation timestamp
+maintain a symlink to the latest log file
+
+options:
+  -e | --extension      extension appended after the timestamp (default: $default_extension)
+  -f | --format         timestamp format (default: $default_format)"
+    exit $rc
+} >&2
+
+getopt -T &>/dev/null
+(( $? != 4 )) && die "bad getopt"
+getopt="$(getopt -n "${0##*/}" -l extension:,format:,help -o +e:f:h -- "$@")" || exit $?
+eval set -- "$getopt"
+
+extension=$default_extension
+format=$default_format
+
+while true; do
+    case "$1" in
+        -e|--extension) extension="$2"; shift ;;
+        -f|--format) format="$2"; shift ;;
+        -h|--help) usage 0 ;;
+        --) shift; break ;;
+        *) die "internal error" ;;
+    esac
+    shift
+done
+
+basename="$1"
+file="$basename$(date "+$format")$extension"
+link="${basename}latest$extension"
+
+[[ -L "$link" ]] && rm "$link"
+ln -s "$file" "$link"
+
+echo "logging to: $file" >&2
+
+tee "$file"
