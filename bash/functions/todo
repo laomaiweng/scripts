@@ -1,4 +1,3 @@
-#!/bin/bash
 # todo - print directory todos upon directory change
 
 function todo() {
@@ -181,3 +180,5 @@ function todo() {
             ;;
     esac
 }
+
+# vim: ft=bash

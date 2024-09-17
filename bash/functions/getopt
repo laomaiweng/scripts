@@ -1,9 +1,12 @@
-#!/bin/bash
 # getopt - wrapper module for agriffis' pure-getopt
 
-# Location of this script (for reference in the function, not exported)
-[[ "${BASH_SOURCE:0:1}" == "/" ]] && self="$BASH_SOURCE" || self="$PWD/$BASH_SOURCE"
+# Location of this script
+[[ "${BASH_SOURCE:0:1}" == "/" ]] && __self="$BASH_SOURCE" || __self="$PWD/$BASH_SOURCE"
 
 # Source pure-getopt
-source "${self%/*}/subs/pure-getopt/getopt.bash"
+source "${__self%/*}/third_party/agriffis/pure-getopt/getopt.bash"
 
+# Prevent environment pollution
+unset __self
+
+# vim: ft=bash

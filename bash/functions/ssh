@@ -1,4 +1,3 @@
-#!/bin/bash
 # ssh-agent-test - test for a running SSH agent
 # ssh-agent-fix-firejail-pid - fix the PID written by a Firejail'ed SSH agent to its environment file
 # ssh-agent-add-session-keys - add session keys (those in ~/.ssh/session-keys.d) to the SSH agent
@@ -118,3 +117,5 @@ ssh-agent-respawn() {
 
     return 0
 }
+
+# vim: ft=bash

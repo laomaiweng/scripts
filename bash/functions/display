@@ -1,4 +1,3 @@
-#!/bin/bash
 # nodisplay - unset the DISPLAY environment variable (useful over SSH)
 # dodisplay - restore the DISPLAY environment variable
 
@@ -20,3 +19,4 @@ function dodisplay() {
     fi
 }
 
+# vim: ft=bash

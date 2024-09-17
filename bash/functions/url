@@ -1,4 +1,3 @@
-#!/bin/bash
 # urlencode - encode special characters in a string so that it may be used in a URL
 # urldecode - decode special characters in a URL
 #
@@ -36,3 +35,4 @@ function urldecode() {
     printf '%b\n' "${1//%/\\x}"
 }
 
+# vim: ft=bash

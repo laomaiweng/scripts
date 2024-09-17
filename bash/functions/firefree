@@ -1,4 +1,3 @@
-#!/bin/bash
 # firefree - temporary firejail bypass
 
 #TODO: set exit trap to cleanup directory on shell exit!
@@ -93,3 +92,5 @@ function firefree() {
 # Enable basic command completion
 #TODO: implement full-blown command completion for all firefree subcommands
 complete -F _command firefree
+
+# vim: ft=bash
