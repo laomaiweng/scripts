@@ -1,0 +1,54 @@
+#!/bin/bash
+
+die() {
+    local rc=$?
+    echo "error: $*"
+    exit $rc
+} >&2
+
+usage() {
+    local -i rc=$1
+    echo "usage: ${0##*/} [options] <lineno> [files]
+
+single out a line from files or standard input
+
+options:
+  -n | --no-heading     don't print the file path above each line
+                        when processing multiple files"
+    exit $rc
+} >&2
+
+getopt -T &>/dev/null
+(( $? != 4 )) && die "bad getopt"
+getopt="$(getopt -n "${0##*/}" -l no-heading,help -o +nh -- "$@")" || exit $?
+eval set -- "$getopt"
+
+heading=true
+
+while true; do
+    case "$1" in
+        -n|--no-heading) heading=false ;;
+        -h|--help) usage 0 ;;
+        --) shift; break ;;
+        *) die "internal error" ;;
+    esac
+    shift
+done
+
+lineno=$((${1:-1}))
+shift
+
+multi=false
+if (( $# > 0 )); then
+    files=("$@")
+    (( $# > 1 )) && multi=true
+else
+    files=(-)
+fi
+
+for f in "${files[@]}"; do
+    $multi && $heading && printf "==> %s <==\n" "$f"
+    (( lineno > 0 )) && head -n$((lineno)) "$f" | tail -n1
+    (( lineno < 0 )) && tail -n$((-lineno)) "$f" | head -n1
+    $multi && $heading && printf '\n'
+done
