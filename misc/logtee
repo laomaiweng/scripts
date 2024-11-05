@@ -1,12 +1,5 @@
 #!/bin/bash
 
-join_by() {
-    local d=${1-} f=${2-}
-    if shift 2; then
-        printf %s "$f" "${@/#/$d}"
-    fi
-}
-
 die() {
     local rc=$?
     echo "error: $*"
@@ -52,8 +45,14 @@ basename="$1"
 file="$basename$(date "+$format")$extension"
 link="${basename}latest$extension"
 
+if [[ "$file" == */* ]]; then
+    dir="${file%/*}"
+    echo "creating log directory: $dir" >&2
+    mkdir -p "$dir" || die mkdir
+fi
+
 [[ -L "$link" ]] && rm "$link"
-ln -s "$file" "$link"
+ln -s "${file##*/}" "$link" || echo "warning: failed to create log symlink: $link" >&2
 
 echo "logging to: $file" >&2
 
