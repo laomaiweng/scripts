@@ -47,8 +47,10 @@ link="${basename}latest$extension"
 
 if [[ "$file" == */* ]]; then
     dir="${file%/*}"
-    echo "creating log directory: $dir" >&2
-    mkdir -p "$dir" || die mkdir
+    if ! [[ -d "$dir" ]]; then
+        echo "creating log directory: $dir" >&2
+        mkdir -p "$dir" || die mkdir
+    fi
 fi
 
 [[ -L "$link" ]] && rm "$link"
