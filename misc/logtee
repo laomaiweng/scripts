@@ -6,7 +6,7 @@ die() {
     exit $rc
 } >&2
 
-readonly default_extension=.log
+readonly default_suffix=.log
 readonly default_format=%Y%m%dT%H%M%S
 
 usage() {
@@ -14,25 +14,25 @@ usage() {
     echo "usage: ${0##*/} [options] <basename>
 
 tee output to a log file suffixed by creation timestamp
-maintain a symlink to the latest log file
+maintain a symlink to the latest log file (or directory if the suffix is a relative path)
 
 options:
-  -e | --extension      extension appended after the timestamp (default: $default_extension)
-  -f | --format         timestamp format (default: $default_format)"
+  -s | --suffix SUFFIX      suffix appended after the timestamp (default: $default_suffix)
+  -f | --format FORMAT      timestamp format (default: $default_format)"
     exit $rc
 } >&2
 
 getopt -T &>/dev/null
 (( $? != 4 )) && die "bad getopt"
-getopt="$(getopt -n "${0##*/}" -l extension:,format:,help -o +e:f:h -- "$@")" || exit $?
+getopt="$(getopt -n "${0##*/}" -l suffix:,format:,help -o +s:f:h -- "$@")" || exit $?
 eval set -- "$getopt"
 
-extension=$default_extension
+suffix=$default_suffix
 format=$default_format
 
 while true; do
     case "$1" in
-        -e|--extension) extension="$2"; shift ;;
+        -s|--suffix) suffix="$2"; shift ;;
         -f|--format) format="$2"; shift ;;
         -h|--help) usage 0 ;;
         --) shift; break ;;
@@ -42,8 +42,13 @@ while true; do
 done
 
 basename="$1"
-file="$basename$(date "+$format")$extension"
-link="${basename}latest$extension"
+ts="$(date "+$format")"
+
+file="$basename$ts$suffix"
+
+# if the suffix is a relative path, only symlink the variable component of the file path
+link="${basename}latest${suffix%%/*}"
+target="$basename$ts${suffix%%/*}"
 
 if [[ "$file" == */* ]]; then
     dir="${file%/*}"
@@ -54,7 +59,7 @@ if [[ "$file" == */* ]]; then
 fi
 
 [[ -L "$link" ]] && rm "$link"
-ln -s "${file##*/}" "$link" || echo "warning: failed to create log symlink: $link" >&2
+ln -s "${target##*/}" "$link" || echo "warning: failed to create log symlink: $link" >&2
 
 echo "logging to: $file" >&2
 
