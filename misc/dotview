@@ -9,8 +9,8 @@ die() {
     exit 1
 } >&2
 
-require() {  # 1:prog
-    command -v "$1" &>/dev/null || die "missing dependency: $1"
+require() {  # 1:prog 2:label
+    command -v "$1" &>/dev/null || die "missing dependency: ${1:-$2}"
 }
 
 gen_output_name() {  # 1:dot_filename
@@ -62,7 +62,7 @@ if [[ "$1" =~ ^(-h|--help)$ ]]; then
 fi
 
 # check viewer
-require "${DOTVIEW_PROGRAM_STDIN%% *}" # only require the single-image program, we can fall back to it if missing the multi-image program
+require "${DOTVIEW_PROGRAM_STDIN%% *}" \$DOTVIEW_PROGRAM_STDIN # only require the single-image program, we can fall back to it if missing the multi-image program
 require dot
 require tee
 require mktemp
