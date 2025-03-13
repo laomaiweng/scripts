@@ -1,0 +1,19 @@
+#!/bin/bash
+
+exec 1>&2
+
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    against=HEAD
+else
+    # Initial commit: diff against an empty tree object
+    against=$(git hash-object -t tree /dev/null)
+fi
+
+rc=0
+for f in $(git diff --cached --name-only "$against"); do
+    if [[ "$f" == *.[ch] && -f "$f" ]]; then
+        clang-format --dry-run -Werror "$f" || { rc=1; echo; }
+    fi
+done
+
+exit $rc
