@@ -1,0 +1,15 @@
+# alert - display a DE notification
+
+alert() {
+    local rc=$?
+    local appname=alert
+    if [[ -n "$1" && "$1" != -* ]]; then
+        # not an option, use as app-name
+        appname="$1"
+        shift
+    fi
+
+    notify-send --expire-time=0 --urgency=normal --icon="$([ $rc = 0 ] && echo terminal || echo error)" ${appname:+--app-name="$appname"} "$(history | tail -n1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')" "$@"
+}
+
+# vim: ft=bash
