@@ -3,36 +3,54 @@
 #
 # Credits go to Orwellophile @ http://stackoverflow.com/questions/296536/urlencode-from-a-bash-script
 
-function urlencode() {
-    local STR="$1"
-    local STRLEN=${#STR}
-    local URL=""
+urlencode() {
+    local str
+
+    if [[ -v 1 ]]; then
+        str="$1"
+    else
+        # Read stdin without stripping trailing newlines
+        IFS='' read -d '' -r str
+    fi
+
+    local strlen=${#str}
+    local url=""
 
     # Loop over the string
-    for (( POS=0 ; POS<STRLEN ; POS++ ))
-    do
-        C="${STR:$POS:1}"
-        case "$C" in
+    local pos
+    for (( pos=0 ; pos<strlen ; pos++ )); do
+        local o
+        local c="${str:$pos:1}"
+        case "$c" in
             [-_.~a-zA-Z0-9])
-                O="$C"
+                o="$c"
                 ;;
 
             *)
-                printf -v O '%%%02x' "'$C"
+                printf -v o '%%%02x' "'$c"
                 ;;
         esac
-        URL+="$O"
+        url+="$o"
     done
 
-    echo "$URL"
+    printf '%s' "$url"
 }
 
 
-function urldecode() {
+urldecode() {
+    local url
+
+    if [[ -v 1 ]]; then
+        url="$1"
+    else
+        # Read stdin without stripping trailing newlines
+        IFS='' read -d '' -r url
+    fi
+
     # This is perhaps a risky gambit, but since all escape characters must be
-    # encoded, we can replace %NN with \xNN and pass the lot to printf -b, which
+    # encoded, we can replace %NN with \xNN and pass the lot to printf %b, which
     # will decode hex for us
-    printf '%b\n' "${1//%/\\x}"
+    printf '%b' "${url//%/\\x}"
 }
 
 # vim: ft=bash
