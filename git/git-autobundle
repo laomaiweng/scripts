@@ -92,7 +92,11 @@ else
     fi
 
     bundle="$(join_path "${dirs[@]}" "$bundle")"
-    abs_bundle="$PWD/$bundle"
+    if [[ "${bundle:0:1}" == / ]]; then
+        abs_bundle="$bundle"
+    else
+        abs_bundle="$PWD/$bundle"
+    fi
 fi
 clone="$(mktemp -d --tmpdir "autobundle.$base.XXXXXX")"
 trap 'rm -rf "$clone"' EXIT
