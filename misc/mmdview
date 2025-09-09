@@ -24,6 +24,7 @@ keep() {  # 1:input 2:output [3:omit_input]
     printf "%${n}s -> %s\n" "$in" "$indir/${2##*/}"
 }
 
+declare -i rendered=0
 render() {  # 1:input
     local inext="${1##*.}"
     local inbase="${1##*/}"
@@ -37,10 +38,12 @@ render() {  # 1:input
     if [[ "$inext" == md ]]; then
         local omit=false
         for out in "$tmpbase"-*."$MMDVIEW_FORMAT"; do
+            ((rendered++))
             keep "$1" "$out" "$omit"
             omit=true
         done
     else
+        ((rendered++))
         keep "$1" "$tmp"
     fi
 }
@@ -75,6 +78,7 @@ fi
 readarray -td: exts <<<"$MMDVIEW_EXTS":; unset 'exts[-1]'
 
 # check viewer
+[[ -n "$MMDVIEW_PROGRAM_SINGLE" ]] || die "missing required environment variable: MMDVIEW_PROGRAM_SINGLE"
 require "${MMDVIEW_PROGRAM_SINGLE%% *}"  # only require the single-image program, we can fall back to it if missing the multi-image program
 require mmdc
 require tee
@@ -129,7 +133,7 @@ for f in "${inputs[@]}"; do
 done
 
 # now invoke the viewer
-if [[ -n "$MMDVIEW_PROGRAM" ]]; then
+if [[ -n "$MMDVIEW_PROGRAM" ]] && (( rendered > 1 )); then
     $MMDVIEW_PROGRAM "$tmpdir"
 else
     for f in "$tmpdir"/*; do
