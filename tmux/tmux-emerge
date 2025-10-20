@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# possible formats:
+# 2024-10-27T23:38:09 >>> dev-lang/rust... (28 of 40) ETA: 11′32″
+# 2024-10-27T23:57:35 >>> app-crypt/gnupg... +44s
+
+# first sed expr:  adds "(? of ?)" so we can match parens even if the input has the 2nd format (above)
+# second sed expr: substitution: >>> $package... .*($xx of $yy).*  -->  $package ($xx/$yy)
+package=$(qlop -r | sed -e 's/$/(? of ?)/' -e 's/.*>>> \(.*\)\.\.\. [^(]*\((\([0-9?]\+\) of \([0-9?]\+\))\)\?.*/\1 (\3\/\4)/')
+if [[ -n "$package" ]]; then
+    echo "emerge: $package"
+else
+    echo "no emerge"
+fi

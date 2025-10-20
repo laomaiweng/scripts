@@ -1,0 +1,15 @@
+#!/bin/bash
+
+sensors coretemp-isa-0000 corsairpsu-hid-3-3 | sed -n -f /dev/fd/10 10<<EOF
+/^Package id 0:/ {
+    s/^Package id 0: *+\([^.]\+\)\..°C.*/\1°C/
+    h
+}
+/^power total:/ {
+    s/^power total: *\([^.]\+\)\... W.*/\1W/
+    H
+    x
+    s/\n/ /p
+    q
+}
+EOF
