@@ -1,0 +1,3 @@
+#!/bin/bash
+
+diff --changed-group-format="%>" --unchanged-group-format="" .config.old .config
