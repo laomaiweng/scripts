@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# The notification ID, should we want to use it with `makoctl`
+id="$1"
+
+# Use --cache-file=/dev/null to avoid caching the selected action
+wofi --show=dmenu --prompt="Notification action" --gtk-dark --width=400 --height=260 --cache-file=/dev/null
