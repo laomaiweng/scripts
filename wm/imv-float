@@ -1,0 +1,17 @@
+#!/bin/bash
+
+appid=imv
+viewer=imv
+
+# Monitor sway events waiting for the viewer window to pop, and make it float
+(
+    pid=$(swaymsg --monitor --type subscribe '["window"]' | jq --arg appid "$appid" 'select(.change == "new" and .container.app_id == $appid) | (.container.pid, halt)') && \
+        swaymsg '[pid='"$pid"'] floating enable'
+) &
+
+"$viewer" "$@"
+
+# Kill the monitor in case the window didn't pop up
+kill %1 &>/dev/null
+
+# vim: ts=4 sts=4 sw=4 et
