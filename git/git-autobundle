@@ -49,21 +49,28 @@ options:
   -r | --recursive      recursively bundle submodules (using .gitmodules from the origin's HEAD)
   -x | --directories    create the bundle under a hierarchy of directories matching the remote repository path
   -P | --prefix DIR     create the bundle (and hierarchy if used with -x) under the provided path
+  -c | --clobber yes|no|ask|skip    what to do for an already existing bundle: overwrite, fail, ask (the default), or skip
+                        the short form doesn't take a value and is equivalent to \`--clobber yes\`
+  -n | --dry-run        only show what would be done, but do not actually create the bundles
   -C | --clone-opt OPT  pass the provided option to \`git clone\` (cumulative)"
     exit $rc
 } >&2
-# XXX: add --yolo to overwrite submodule bundles w/o error
-# XXX: add --dry-run to just list what would be done (useful when recursively bundling submodules)
 
 getopt -T &> /dev/null
 (( $? != 4 )) && die "bad getopt"
-getopt="$(getopt -n "${0##*/}" -l recursive,directories,prefix:,clone-opt:,help -o +rxP:C:h -- "$@")" || exit $?
+getopt="$(getopt -n "${0##*/}" -l recursive,directories,prefix:,clobber:,dry-run,clone-opt:,help -o +rxP:cnC:h -- "$@")" || exit $?
 eval set -- "$getopt"
 
 recursive=false
 use_directories=false
 use_prefix=false
 prefix=
+if [[ -t 0 ]]; then
+    clobber=ask
+else
+    clobber=no
+fi
+dry_run=false
 clone_opts=()
 
 while true; do
@@ -71,6 +78,9 @@ while true; do
         -r|--recursive) recursive=true ;;
         -x|--directories) use_directories=true ;;
         -P|--prefix) use_prefix=true; prefix="${2:-.}"; shift ;;
+        -c) clobber=yes ;;
+        --clobber) clobber="${2,,}"; shift ;;
+        -n|--dry-run) dry_run=true ;;
         -C|--clone-opt) clone_opts+=("$2"); shift ;;
         -h|--help) usage 0 ;;
         --) shift; break ;;
@@ -78,6 +88,16 @@ while true; do
     esac
     shift
 done
+
+case "$clobber" in
+    y|ye|yes) ;;
+    n|no) ;;
+    a|as|ask)
+        [[ -t 0 ]] || die "cannot ask to clobber existing bundles without a tty"
+        ;;
+    s|sk|ski|skip) ;;
+    *) die "bad --clobber value: $clobber"
+esac
 
 if [[ -z "$1" ]]; then
     error "missing <repo>"
@@ -92,7 +112,7 @@ fresh_repos=()
 fresh_bundles=()
 
 autobundle() { # 1:repo 2:bundle
-    local repo base bundle abs_bundle clone
+    local repo base bundle abs_bundle clone skip_bundle=false
 
     repo="${1%%+(/)}"  # strip trailing /s
     base="${repo##*/}"
@@ -138,6 +158,7 @@ autobundle() { # 1:repo 2:bundle
     fi
 
     # ensure we're not going to overwrite a freshly created bundle
+    # this is different from handling a pre-existing bundle, which is governed by the --clobber behavior
     # (we already checked we haven't freshly bundled this repo so this would mean
     # a different repo resulted in the same bundle path)
     if contains "$abs_bundle" "${fresh_bundles[@]}"; then
@@ -146,22 +167,63 @@ autobundle() { # 1:repo 2:bundle
         die "duplicate bundle path: $abs_bundle"
     fi
 
+    # handle pre-existing bundle clobbering
+    if [[ -f "$abs_bundle" ]]; then
+        case "$clobber" in
+            n*) die "bundle already exists: $abs_bundle" ;;
+            a*)
+                warning "bundle already exists: $abs_bundle"
+                local ans=
+                [[ -z "$ans" ]]
+                while [[ -z "$ans" ]]; do
+                    read -rp "         overwrite? [y/N/q] " -n1 ans
+                    [[ -z "$ans" ]] || echo
+                    case "${ans,,}" in
+                        "") ans=n ;&
+                        n)
+                            if $recursive; then
+                                # skip the bundle but we still need to clone the repo to recurse
+                                skip_bundle=true
+                            else
+                                return 0
+                            fi
+                            ;;
+                        y) ;;
+                        q) exit 1 ;;
+                        *) ans= ;;
+                    esac
+                done
+                ;;
+            s*)
+                warning "bundle already exists, skipping: $abs_bundle"
+                skip_bundle=true
+                ;;
+            y*) ;;
+        esac
+    fi
+
     clone="$(mktemp -d --tmpdir "autobundle.$base.XXXXXX")"
     trap 'rm -rf "$clone"' EXIT
 
     git clone --bare "${clone_opts[@]}" "$repo" "$clone" || die "git clone failed ${clone_opts+"(clone opts: ${clone_opts[*]})"}"
 
-    mkdir -p "${abs_bundle%/*}" || die "mkdir failed"
-    (cd "$clone" && git bundle create "$abs_bundle" --all) || die "git bundle failed"
-    success "Bundle created" "$bundle"
+    if ! $skip_bundle; then
+        if ! $dry_run; then
+            mkdir -p "${abs_bundle%/*}" || die "mkdir failed"
+            (cd "$clone" && git bundle create "$abs_bundle" --all) || die "git bundle failed"
+            success "Bundle created" "$bundle"
+        else
+            success "Bundle to create" "$bundle"
+        fi
+    fi
 
     fresh_bundles+=("$abs_bundle")
     fresh_repos+=("$repo")
 
     if $recursive && git --git-dir "$clone" show HEAD:.gitmodules &>/dev/null; then
         # there's a gitmodules file, recurse
-        local key value gm_ok=() gm_all=()
-        while IFS='=' read -r key value; do
+        local key value gm_fd gm_ok=() gm_all=()
+        while IFS='=' read -r -u "$gm_fd" key value; do
             [[ "$key" == submodule.*.url ]] || continue
             local name="${key%.url}"
             name="${name#submodule.}"
@@ -182,7 +244,7 @@ autobundle() { # 1:repo 2:bundle
                 error "failed to bundle submodule: $name: $value"
                 echo "       attempting to carry on"
             fi
-        done < <(git config -f <(git --git-dir "$clone" show HEAD:.gitmodules) -l)
+        done {gm_fd}< <(git config -f <(git --git-dir "$clone" show HEAD:.gitmodules) -l)
         # XXX: we may not correctly detect `git config` failing
 
         (( ${#gm_ok[@]} == ${#gm_all[@]} )) || die "failed to bundle all ${#gm_all[@]} submodules"
