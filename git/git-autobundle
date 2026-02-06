@@ -1,12 +1,20 @@
 #!/bin/bash
 
 error() {
-    echo "error: $*"
+    printf "\e[1;31merror:\e[0m %s\n" "$*"
 } >&2
 
 warning() {
-    echo "warning: $*"
+    printf "\e[1;33mwarning:\e[0m %s\n" "$*"
 } >&2
+
+info() { # 1:header 2:message
+    printf "\e[0;34m%s:\e[0m %s\n" "$1" "$2"
+}
+
+success() { # 1:header 2:message
+    printf "\e[1;32m%s:\e[0m %s\n" "$1" "$2"
+}
 
 die() {
     local rc=$?
@@ -24,22 +32,35 @@ join_path() {
     join_by / "${components[@]}"
 }
 
+contains() { # 1:needle *:haystack
+    local needle="$1" e
+    shift
+    for e in "$@"; do
+        [[ "$needle" == "$e" ]] && return 0
+    done
+    return 1
+}
+
 usage() {
     local -i rc=$1
     echo "usage: git autobundle [options] <repo> [<bundle>]
 
 options:
+  -r | --recursive      recursively bundle submodules (using .gitmodules from the origin's HEAD)
   -x | --directories    create the bundle under a hierarchy of directories matching the remote repository path
   -P | --prefix DIR     create the bundle (and hierarchy if used with -x) under the provided path
   -C | --clone-opt OPT  pass the provided option to \`git clone\` (cumulative)"
     exit $rc
 } >&2
+# XXX: add --yolo to overwrite submodule bundles w/o error
+# XXX: add --dry-run to just list what would be done (useful when recursively bundling submodules)
 
 getopt -T &> /dev/null
 (( $? != 4 )) && die "bad getopt"
-getopt="$(getopt -n "${0##*/}" -l directories,prefix:,clone-opt:,help -o +xP:C:h -- "$@")" || exit $?
+getopt="$(getopt -n "${0##*/}" -l recursive,directories,prefix:,clone-opt:,help -o +rxP:C:h -- "$@")" || exit $?
 eval set -- "$getopt"
 
+recursive=false
 use_directories=false
 use_prefix=false
 prefix=
@@ -47,6 +68,7 @@ clone_opts=()
 
 while true; do
     case "$1" in
+        -r|--recursive) recursive=true ;;
         -x|--directories) use_directories=true ;;
         -P|--prefix) use_prefix=true; prefix="${2:-.}"; shift ;;
         -C|--clone-opt) clone_opts+=("$2"); shift ;;
@@ -64,45 +86,109 @@ fi
 
 shopt -s extglob
 
-repo="${1%%+(/)}"  # strip trailing /s
-base="${repo##*/}"
-base="${base%.git}"
+# list of all repos/bundles created during this run
+# used for deduplication when recursing into submodules
+fresh_repos=()
+fresh_bundles=()
 
-bundle="$2"
-[[ -n "$bundle" ]] || bundle="$base".git
-if [[ "${bundle:0:1}" == / ]]; then
-    # absolute bundle path, don't alter it
-    $use_directories || $use_prefix && warning "absolute path provided for bundle, ignoring --directories/--prefix"
-    abs_bundle=$bundle
-else
-    # relative bundle path, construct its absolute path
-    dirs=()
+autobundle() { # 1:repo 2:bundle
+    local repo base bundle abs_bundle clone
 
-    $use_prefix && dirs+=("$prefix")
+    repo="${1%%+(/)}"  # strip trailing /s
+    base="${repo##*/}"
+    base="${base%.git}"
 
-    if $use_directories; then
-        path="${repo%/*}"
-        if [[ "$path" == *://* ]]; then
-            path="${path#*://}"  # strip protocol
-        else
-            # XXX: this assumes ssh
-            path="${path/://}"   # turn : after host into /
-        fi
-        dirs+=("$path")
+    # ensure we're not going to bundle an already freshly bundled repo
+    if contains "$repo" "${fresh_repos[@]}"; then
+        warning "skipping already bundled repo: $repo"
+        return 0
     fi
 
-    bundle="$(join_path "${dirs[@]}" "$bundle")"
+    info "Bundling repo" "$repo"
+
+    bundle="$2"
+    [[ -n "$bundle" ]] || bundle="$base".git
     if [[ "${bundle:0:1}" == / ]]; then
-        abs_bundle="$bundle"
+        # absolute bundle path, don't alter it
+        $use_directories || $use_prefix && warning "absolute path provided for bundle, ignoring --directories/--prefix"
+        abs_bundle=$bundle
     else
-        abs_bundle="$PWD/$bundle"
-    fi
-fi
-clone="$(mktemp -d --tmpdir "autobundle.$base.XXXXXX")"
-trap 'rm -rf "$clone"' EXIT
+        # relative bundle path, construct its absolute path
+        local dirs=()
 
-git clone --bare "${clone_opts[@]}" "$repo" "$clone" || die "git clone failed ${clone_opts+"(clone opts: ${clone_opts[*]})"}"
-mkdir -p "${abs_bundle%/*}" || die "mkdir failed"
-(cd "$clone" && git bundle create "$abs_bundle" --all) || die "git bundle failed"
-echo "Bundle created: $bundle"
-rm -rf "$clone" || die "cleanup failed"
+        $use_prefix && dirs+=("$prefix")
+
+        if $use_directories; then
+            local path="${repo%/*}"
+            if [[ "$path" == *://* ]]; then
+                path="${path#*://}"  # strip protocol
+            else
+                # XXX: this assumes ssh
+                path="${path/://}"   # turn : after host into /
+            fi
+            dirs+=("$path")
+        fi
+
+        bundle="$(join_path "${dirs[@]}" "$bundle")"
+        if [[ "${bundle:0:1}" == / ]]; then
+            abs_bundle="$bundle"
+        else
+            abs_bundle="$PWD/$bundle"
+        fi
+    fi
+
+    # ensure we're not going to overwrite a freshly created bundle
+    # (we already checked we haven't freshly bundled this repo so this would mean
+    # a different repo resulted in the same bundle path)
+    if contains "$abs_bundle" "${fresh_bundles[@]}"; then
+        # should never happen with --directories, due to the $fresh_repos check earlier
+        error "repo bundle path already created for another repo (try again with --directories?)"
+        die "duplicate bundle path: $abs_bundle"
+    fi
+
+    clone="$(mktemp -d --tmpdir "autobundle.$base.XXXXXX")"
+    trap 'rm -rf "$clone"' EXIT
+
+    git clone --bare "${clone_opts[@]}" "$repo" "$clone" || die "git clone failed ${clone_opts+"(clone opts: ${clone_opts[*]})"}"
+
+    mkdir -p "${abs_bundle%/*}" || die "mkdir failed"
+    (cd "$clone" && git bundle create "$abs_bundle" --all) || die "git bundle failed"
+    success "Bundle created" "$bundle"
+
+    fresh_bundles+=("$abs_bundle")
+    fresh_repos+=("$repo")
+
+    if $recursive && git --git-dir "$clone" show HEAD:.gitmodules &>/dev/null; then
+        # there's a gitmodules file, recurse
+        local key value gm_ok=() gm_all=()
+        while IFS='=' read -r key value; do
+            [[ "$key" == submodule.*.url ]] || continue
+            local name="${key%.url}"
+            name="${name#submodule.}"
+
+            if contains "$name" "${gm_ok[@]}"; then
+                warning "skipping extra submodule url: $name: $value"
+                continue
+            fi
+
+            contains "$name" "${gm_all[@]}" || gm_all+=("$name")
+
+            # submodules don't get custom bundle names (the `[<bundle>]` argument to git-autobundle)
+            # NB: this turns `autobundle` into a recursive function, hopefully the git repo hierarchies
+            #     out there are not sufficient to make the recursive call stack blow up
+            if autobundle "$value"; then
+                gm_ok+=("$name")
+            else
+                error "failed to bundle submodule: $name: $value"
+                echo "       attempting to carry on"
+            fi
+        done < <(git config -f <(git --git-dir "$clone" show HEAD:.gitmodules) -l)
+        # XXX: we may not correctly detect `git config` failing
+
+        (( ${#gm_ok[@]} == ${#gm_all[@]} )) || die "failed to bundle all ${#gm_all[@]} submodules"
+    fi
+
+    rm -rf "$clone" || warning "cleanup failed: $clone"
+}
+
+autobundle "$1" "$2"
