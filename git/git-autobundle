@@ -46,22 +46,28 @@ usage() {
     echo "usage: git autobundle [options] <repo> [<bundle>]
 
 options:
-  -r | --recursive      recursively bundle submodules (using .gitmodules from the origin's HEAD)
-  -x | --directories    create the bundle under a hierarchy of directories matching the remote repository path
-  -P | --prefix DIR     create the bundle (and hierarchy if used with -x) under the provided path
+  -r | --recursive                  recursively bundle submodules
+       --commit COMMIT              root repo commit to get .gitmodules from for --recursive (default: HEAD)
+  -D | --depth DEPTH                max depth for --recursive
+  -x | --directories                create the bundle under a hierarchy of directories matching the remote repository path
+  -P | --prefix DIR                 create the bundle (and hierarchy if used with -x) under the provided path
   -c | --clobber yes|no|ask|skip    what to do for an already existing bundle: overwrite, fail, ask (the default), or skip
-                        the short form doesn't take a value and is equivalent to \`--clobber yes\`
-  -n | --dry-run        only show what would be done, but do not actually create the bundles
-  -C | --clone-opt OPT  pass the provided option to \`git clone\` (cumulative)"
+                                    the short form doesn't take a value and is equivalent to \`--clobber yes\`
+  -n | --dry-run                    only show what would be done, but do not actually create the bundles
+  -C | --clone-opt OPT              pass the provided option to \`git clone\` (cumulative)"
     exit $rc
 } >&2
 
 getopt -T &> /dev/null
 (( $? != 4 )) && die "bad getopt"
-getopt="$(getopt -n "${0##*/}" -l recursive,directories,prefix:,clobber:,dry-run,clone-opt:,help -o +rxP:cnC:h -- "$@")" || exit $?
+getopt="$(getopt -n "${0##*/}" -l recursive,commit:,depth:,directories,prefix:,clobber:,dry-run,clone-opt:,help -o +rD:xP:cnC:h -- "$@")" || exit $?
 eval set -- "$getopt"
 
 recursive=false
+have_commit=false
+commit=HEAD
+have_depth=false
+depth=-1
 use_directories=false
 use_prefix=false
 prefix=
@@ -76,6 +82,8 @@ clone_opts=()
 while true; do
     case "$1" in
         -r|--recursive) recursive=true ;;
+        --commit) have_commit=true; commit="$2"; shift ;;
+        -D|--depth) have_depth=true; depth="$2"; shift ;;
         -x|--directories) use_directories=true ;;
         -P|--prefix) use_prefix=true; prefix="${2:-.}"; shift ;;
         -c) clobber=yes ;;
@@ -88,6 +96,19 @@ while true; do
     esac
     shift
 done
+
+if ! $recursive && $have_commit; then
+    die "--commit is invalid without --recursive"
+fi
+if $have_commit && [[ -z "$commit" ]]; then
+    die "empty --commit: $commit"
+fi
+if ! $recursive && $have_depth; then
+    die "--depth is invalid without --recursive"
+fi
+if $have_depth && (( ${depth:-0} <= 0 )); then
+    die "invalid --depth: $depth"
+fi
 
 case "$clobber" in
     y|ye|yes) ;;
@@ -111,8 +132,8 @@ shopt -s extglob
 fresh_repos=()
 fresh_bundles=()
 
-autobundle() { # 1:repo 2:bundle
-    local repo_url repo_canon_url base bundle abs_bundle clone skip_bundle=false
+autobundle() { # 1:repo 2:commit 3:depth 4:bundle
+    local commit=$2 repo_depth=$3 repo_url repo_canon_url base bundle abs_bundle clone skip_bundle=false
 
     repo_url="${1%%+(/)}"  # strip trailing /s
     repo_canon_url="${repo_url%.git}"  # strip trailing .git for the canonical URL (…/repo & …/repo.git are usually the same repo)
@@ -126,7 +147,7 @@ autobundle() { # 1:repo 2:bundle
 
     info "Bundling repo" "$repo_canon_url"
 
-    bundle="$2"
+    bundle="$4"
     [[ -n "$bundle" ]] || bundle="$base".git
     if [[ "${bundle:0:1}" == / ]]; then
         # absolute bundle path, don't alter it
@@ -220,37 +241,71 @@ autobundle() { # 1:repo 2:bundle
     fresh_bundles+=("$abs_bundle")
     fresh_repos+=("$repo_canon_url")
 
-    if $recursive && git --git-dir "$clone" show HEAD:.gitmodules &>/dev/null; then
-        # there's a gitmodules file, recurse
-        local key value gm_fd gm_ok=() gm_all=()
-        while IFS='=' read -r -u "$gm_fd" key value; do
-            [[ "$key" == submodule.*.url ]] || continue
-            local name="${key%.url}"
-            name="${name#submodule.}"
+    # if there's a gitmodules file and we're not out of depth, recurse
+    local gm_file="$commit":.gitmodules
+    if $recursive && git --git-dir "$clone" show "$gm_file" &>/dev/null; then
+        if (( depth < 0 || repo_depth < depth )); then
+            local key value gm_fd gm_ok=()
+            local -A gm_paths=()
 
-            if contains "$name" "${gm_ok[@]}"; then
-                warning "skipping extra submodule url: $name: $value"
-                continue
-            fi
+            # first build the table of submodules paths
+            while IFS='=' read -r -u "$gm_fd" key value; do
+                [[ "$key" == submodule.*.path ]] || continue
+                local name="${key%.path}"
+                name="${name#submodule.}"
 
-            contains "$name" "${gm_all[@]}" || gm_all+=("$name")
+                if contains "$name" "${gm_paths[@]}"; then
+                    warning "skipping extra submodule path: $name: $value"
+                    continue
+                fi
 
-            # submodules don't get custom bundle names (the `[<bundle>]` argument to git-autobundle)
-            # NB: this turns `autobundle` into a recursive function, hopefully the git repo hierarchies
-            #     out there are not sufficient to make the recursive call stack blow up
-            if autobundle "$value"; then
-                gm_ok+=("$name")
-            else
-                error "failed to bundle submodule: $name: $value"
-                echo "       attempting to carry on"
-            fi
-        done {gm_fd}< <(git config -f <(git --git-dir "$clone" show HEAD:.gitmodules) -l)
-        # XXX: we may not correctly detect `git config` failing
+                gm_paths["$name"]="$value"
+            done {gm_fd}< <(git config -f <(git --git-dir "$clone" show "$gm_file") -l)
+            # XXX: we may not correctly detect `git config` failing
 
-        (( ${#gm_ok[@]} == ${#gm_all[@]} )) || die "failed to bundle all ${#gm_all[@]} submodules"
+            # then bundle the submodules
+            while IFS='=' read -r -u "$gm_fd" key value; do
+                [[ "$key" == submodule.*.url ]] || continue
+                local name="${key%.url}"
+                name="${name#submodule.}"
+
+                if contains "$name" "${gm_ok[@]}"; then
+                    warning "skipping extra submodule url: $name: $value"
+                    continue
+                fi
+
+                local subcommit=
+                local path="${gm_paths["$name"]}"
+                if [[ -n "$path" ]]; then
+                    subcommit="$(git --git-dir "$clone" ls-tree --object-only "$commit" "$path")"
+                else
+                    warning "unknown path for submodule: $name "
+                fi
+                if [[ -z "$subcommit" ]]; then
+                    warning "unable to get commit for submodule: $name"
+                    echo "         defaulting to HEAD for recursion"
+                    subcommit=HEAD
+                fi
+
+                # submodules don't get custom bundle names (the `[<bundle>]` argument to git-autobundle)
+                # NB: this turns `autobundle` into a recursive function, hopefully the git repo hierarchies
+                #     out there are not sufficient to make the recursive call stack blow up
+                if autobundle "$value" "$subcommit" $((repo_depth + 1)); then
+                    gm_ok+=("$name")
+                else
+                    error "failed to bundle submodule: $name: $value"
+                    echo "       attempting to carry on"
+                fi
+            done {gm_fd}< <(git config -f <(git --git-dir "$clone" show "$gm_file") -l)
+            # XXX: we may not correctly detect `git config` failing
+
+            (( ${#gm_ok[@]} == ${#gm_paths[@]} )) || die "failed to bundle all ${#gm_paths[@]} submodules"
+        else
+            warning "capping recursive submodule autobundle at depth $repo_depth in: $repo_canon_url"
+        fi
     fi
 
     rm -rf "$clone" || warning "cleanup failed: $clone"
 }
 
-autobundle "$1" "$2"
+autobundle "$1" "$commit" 0 "$2"
