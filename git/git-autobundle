@@ -53,6 +53,7 @@ options:
   -P | --prefix DIR                 create the bundle (and hierarchy if used with -x) under the provided path
   -c | --clobber yes|no|ask|skip    what to do for an already existing bundle: overwrite, fail, ask (the default), or skip
                                     the short form doesn't take a value and is equivalent to \`--clobber yes\`
+  -s | --symlink                    create a …/repo → …/repo.git or …/repo.git → …/repo symlink
   -n | --dry-run                    only show what would be done, but do not actually create the bundles
   -C | --clone-opt OPT              pass the provided option to \`git clone\` (cumulative)"
     exit $rc
@@ -60,7 +61,7 @@ options:
 
 getopt -T &> /dev/null
 (( $? != 4 )) && die "bad getopt"
-getopt="$(getopt -n "${0##*/}" -l recursive,commit:,depth:,directories,prefix:,clobber:,dry-run,clone-opt:,help -o +rD:xP:cnC:h -- "$@")" || exit $?
+getopt="$(getopt -n "${0##*/}" -l recursive,commit:,depth:,directories,prefix:,clobber:,symlink,dry-run,clone-opt:,help -o +rD:xP:csnC:h -- "$@")" || exit $?
 eval set -- "$getopt"
 
 recursive=false
@@ -76,6 +77,7 @@ if [[ -t 0 ]]; then
 else
     clobber=no
 fi
+symlink=false
 dry_run=false
 clone_opts=()
 
@@ -88,6 +90,7 @@ while true; do
         -P|--prefix) use_prefix=true; prefix="${2:-.}"; shift ;;
         -c) clobber=yes ;;
         --clobber) clobber="${2,,}"; shift ;;
+        -s|--symlink) symlink=true ;;
         -n|--dry-run) dry_run=true ;;
         -C|--clone-opt) clone_opts+=("$2"); shift ;;
         -h|--help) usage 0 ;;
@@ -133,7 +136,7 @@ fresh_repos=()
 fresh_bundles=()
 
 autobundle() { # 1:repo 2:commit 3:depth 4:bundle
-    local commit=$2 repo_depth=$3 repo_url repo_canon_url base bundle abs_bundle clone skip_bundle=false
+    local commit=$2 repo_depth=$3 repo_url repo_canon_url base bundle abs_bundle bundle_symlink clone skip_bundle=false
 
     repo_url="${1%%+(/)}"  # strip trailing /s
     repo_canon_url="${repo_url%.git}"  # strip trailing .git for the canonical URL (…/repo & …/repo.git are usually the same repo)
@@ -152,7 +155,7 @@ autobundle() { # 1:repo 2:commit 3:depth 4:bundle
     if [[ "${bundle:0:1}" == / ]]; then
         # absolute bundle path, don't alter it
         $use_directories || $use_prefix && warning "absolute path provided for bundle, ignoring --directories/--prefix"
-        abs_bundle=$bundle
+        abs_bundle="$bundle"
     else
         # relative bundle path, construct its absolute path
         local dirs=()
@@ -233,6 +236,16 @@ autobundle() { # 1:repo 2:commit 3:depth 4:bundle
             mkdir -p "${abs_bundle%/*}" || die "mkdir failed"
             (cd "$clone" && git bundle create "$abs_bundle" --all) || die "git bundle failed"
             success "Bundle created" "$bundle"
+
+            if $symlink; then
+                # determine symlink name
+                if [[ "$bundle" == *.git ]]; then
+                    bundle_symlink="${abs_bundle%.git}"
+                else
+                    bundle_symlink="$abs_bundle.git"
+                fi
+                ln -s "${abs_bundle##*/}" "$bundle_symlink" || warning "failed to create bundle symlink: $bundle_symlink → ${abs_bundle##*/}"
+            fi
         else
             success "Bundle to create" "$bundle"
         fi
