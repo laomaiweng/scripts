@@ -112,19 +112,19 @@ fresh_repos=()
 fresh_bundles=()
 
 autobundle() { # 1:repo 2:bundle
-    local repo base bundle abs_bundle clone skip_bundle=false
+    local repo_url repo_canon_url base bundle abs_bundle clone skip_bundle=false
 
-    repo="${1%%+(/)}"  # strip trailing /s
-    base="${repo##*/}"
-    base="${base%.git}"
+    repo_url="${1%%+(/)}"  # strip trailing /s
+    repo_canon_url="${repo_url%.git}"  # strip trailing .git for the canonical URL (…/repo & …/repo.git are usually the same repo)
+    base="${repo_canon_url##*/}"
 
     # ensure we're not going to bundle an already freshly bundled repo
-    if contains "$repo" "${fresh_repos[@]}"; then
-        warning "skipping already bundled repo: $repo"
+    if contains "$repo_canon_url" "${fresh_repos[@]}"; then
+        warning "skipping already bundled repo: $repo_canon_url"
         return 0
     fi
 
-    info "Bundling repo" "$repo"
+    info "Bundling repo" "$repo_canon_url"
 
     bundle="$2"
     [[ -n "$bundle" ]] || bundle="$base".git
@@ -139,7 +139,7 @@ autobundle() { # 1:repo 2:bundle
         $use_prefix && dirs+=("$prefix")
 
         if $use_directories; then
-            local path="${repo%/*}"
+            local path="${repo_url%/*}"
             if [[ "$path" == *://* ]]; then
                 path="${path#*://}"  # strip protocol
             else
@@ -205,7 +205,7 @@ autobundle() { # 1:repo 2:bundle
     clone="$(mktemp -d --tmpdir "autobundle.$base.XXXXXX")"
     trap 'rm -rf "$clone"' EXIT
 
-    git clone --bare "${clone_opts[@]}" "$repo" "$clone" || die "git clone failed ${clone_opts+"(clone opts: ${clone_opts[*]})"}"
+    git clone --bare "${clone_opts[@]}" "$repo_url" "$clone" || die "git clone failed ${clone_opts+"(clone opts: ${clone_opts[*]})"}"
 
     if ! $skip_bundle; then
         if ! $dry_run; then
@@ -218,7 +218,7 @@ autobundle() { # 1:repo 2:bundle
     fi
 
     fresh_bundles+=("$abs_bundle")
-    fresh_repos+=("$repo")
+    fresh_repos+=("$repo_canon_url")
 
     if $recursive && git --git-dir "$clone" show HEAD:.gitmodules &>/dev/null; then
         # there's a gitmodules file, recurse
