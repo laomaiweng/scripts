@@ -1,9 +1,5 @@
 #!/bin/bash
 
-# Build full name
-[[ "${0:0:1}" == "/" ]] && full_0="$0" || full_0="$PWD/$0"
-
-
 # Functions
 die() { # *:message
     printf "Error: %s\n" "$*"
@@ -19,8 +15,8 @@ help() {
 	  count         number of passphrases to generate
 	
 	Options:
-	  -w|--wordlist <file>      wordlist file to use
-	                            (default: ~/.dwgen_wordlist)
+	  -s|--separator <sep>      separator between words (default: <space>)
+	  -w|--wordlist <file>      wordlist file to use (default: ~/.dwgen_wordlist)
 	EOF
 }
 
@@ -34,15 +30,17 @@ fi
 # Process arguments
 getopt -T &> /dev/null
 (( $? != 4 )) && die "your getopt version is too old, get the enhanced getopt from util-linux!"
-getopt="$(getopt -n "${0##*/}" -l wordlist:,help -o +w:h -- "$@")" || exit 128
+getopt="$(getopt -n "${0##*/}" -l separator:,wordlist:,help -o +s:w:h -- "$@")" || exit 128
 eval set -- "$getopt"
 
+separator=" "
 wordlist=~/.dwgen_wordlist
 length=6
 count=10
 while true
 do
     case "$1" in
+        -s|--separator) separator="$2"; shift ;;
         -w|--wordlist) wordlist="$2"; shift ;;
         -h|--help)
             help
@@ -56,14 +54,22 @@ do
     esac
     shift
 done
+
 # Consume remaining arguments
 (( $# >= 1 )) && { length="$1"; shift; }
 (( $# >= 1 )) && { count="$1"; shift; }
 (( $# == 0 )) || die "too many arguments: ${*@Q}"
+
 # Check arguments
 (( length > 0 )) || die "bad length: $length"
 (( count > 0 )) || die "bad count: $count"
 [[ -f "$wordlist" ]] || die "no such file: $wordlist"
+
+join_array() {
+    local IFS="$1"
+    shift
+    printf '%s\n' "$*"
+}
 
 for (( i = 0; i < count; i++ ))
 do
@@ -75,5 +81,6 @@ do
         word="$(sed -n -e 's/^'"$rand"'\t\(.*\)$/\1/p' <"$wordlist")" || die "can't find word in $wordlist: $rand"
         words+=( "$word" )
     done
-    printf -- '%s\n' "${words[*]}"
+
+    join_array "$separator" "${words[@]}"
 done
