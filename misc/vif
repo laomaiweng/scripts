@@ -1,0 +1,34 @@
+#!/bin/bash
+
+die() {
+    echo "error: $*"
+    exit 1
+} >&2
+
+if [[ "$1" =~ ^(-h|--help) ]]; then
+    echo "usage: ${0##*/} <file-glob ...>"
+    exit 0
+fi
+
+# Resolve `fd`
+if command -v fdfind &>/dev/null; then
+    fd=fdfind
+elif command -v fd &>/dev/null; then
+    fd=fd
+else
+    die "no fd"
+fi
+
+command -v nvim &>/dev/null || die "no nvim"
+command -v tee &>/dev/null || die "no tee"
+
+files=()
+for f in "$@"; do
+    # Duplicate the output to stderr so the user can see the file list
+    mapfile -t -O ${#files[*]} files < <("$fd" --glob "$f" | tee /dev/stderr)
+done
+
+# Give the user a split second to inspect the file list
+sleep .5
+
+exec nvim "${files[@]}"
