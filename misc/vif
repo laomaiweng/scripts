@@ -28,6 +28,8 @@ for f in "$@"; do
     mapfile -t -O ${#files[*]} files < <("$fd" --glob "$f" | tee /dev/stderr)
 done
 
+(( ${#files[@]} > 0 )) || die "no files"
+
 # Give the user a split second to inspect the file list
 sleep .5
 
